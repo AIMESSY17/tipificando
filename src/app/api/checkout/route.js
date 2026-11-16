@@ -1,6 +1,5 @@
 import { NextResponse } from "next/server";
-import crypto from "node:crypto";
-import { adminDb, cotizar, modoPrueba, pagosActivos, sitio } from "@/lib/server";
+import { adminDb, cotizar, huellaIp, modoPrueba, pagosActivos, sitio } from "@/lib/server";
 import { MINUTOS_RESERVA, copiaEnvio, itemsParaMP } from "@/lib/precios";
 
 // Crea el pedido y la preferencia de Mercado Pago (Checkout Pro).
@@ -8,13 +7,6 @@ import { MINUTOS_RESERVA, copiaEnvio, itemsParaMP } from "@/lib/precios";
 const MAX_INTENTOS = 10;
 const VENTANA_MIN = 10;
 const err = (error, status) => NextResponse.json({ error }, { status });
-
-// Huella de la IP (no guardamos la IP en sí)
-function huellaIp(req) {
-  // x-real-ip lo fija la plataforma (Vercel); el primer valor de x-forwarded-for lo puede inventar el cliente
-  const ip = req.headers.get("x-real-ip") || (req.headers.get("x-forwarded-for") || "").split(",").pop().trim() || "desconocida";
-  return crypto.createHash("sha256").update("tipificado:" + ip).digest("hex").slice(0, 32);
-}
 
 export async function POST(req) {
   if (!pagosActivos()) return err("Mercado Pago todavía no está activado. Usá «Copiar pedido» o «Enviar por DM».", 503);

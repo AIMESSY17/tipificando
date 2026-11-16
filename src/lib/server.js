@@ -1,4 +1,5 @@
 import "server-only";
+import crypto from "node:crypto";
 import { unstable_cache } from "next/cache";
 import { createClient } from "@supabase/supabase-js";
 import { seedProducts, seedSettings, seedEnvios } from "@/data/seed";
@@ -103,4 +104,11 @@ export async function requireAdmin(req) {
   if (!email) return null;
   const { data: row } = await db.from("admins").select("email").eq("email", email.toLowerCase()).maybeSingle();
   return row ? email : null;
+}
+
+// Huella de la IP (no guardamos la IP en sí). La usan el checkout y el webhook.
+export function huellaIp(req) {
+  // x-real-ip lo fija la plataforma (Vercel); el primer valor de x-forwarded-for lo puede inventar el cliente
+  const ip = req.headers.get("x-real-ip") || (req.headers.get("x-forwarded-for") || "").split(",").pop().trim() || "desconocida";
+  return crypto.createHash("sha256").update("tipificado:" + ip).digest("hex").slice(0, 32);
 }

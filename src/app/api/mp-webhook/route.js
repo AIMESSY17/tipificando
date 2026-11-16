@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { adminDb, modoPrueba } from "@/lib/server";
+import { adminDb, huellaIp, modoPrueba } from "@/lib/server";
 import { firmaValida, procesarPago } from "@/lib/pagos";
 
 // Mercado Pago avisa acá cuando cambia un pago.
@@ -32,7 +32,7 @@ export async function POST(req) {
   if (!firmaOk) {
     // Aviso no confiable: se guarda solo fecha (automática), IP y motivo. Nada del cuerpo ni de los parámetros.
     if (db) {
-      const ip = req.headers.get("x-real-ip") || (req.headers.get("x-forwarded-for") || "").split(",").pop().trim() || null;
+      const ip = huellaIp(req);
       const { error } = await db.from("mp_webhooks").insert({
         ip, firma_ok: false, resultado: "firma inválida",
         detalle: { motivo: secret ? "la firma no coincide" : "falta MP_WEBHOOK_SECRET" },

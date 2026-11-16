@@ -73,7 +73,7 @@ Copiá `.env.example` como `.env.local` y completalo (las mismas variables que e
 **Cómo funciona el cobro:**
 - El servidor arma el total con los precios de la base, la oferta, el cupón y el envío. Nunca usa lo que manda el navegador.
 - Si hay cupón, el descuento se reparte entre las piezas de forma proporcional (redondeado a pesos), así el cliente ve en Mercado Pago el detalle de lo que compró. El envío va como costo de envío de Mercado Pago.
-- **Cupones:** el uso se cuenta recién cuando el pago se aprueba. Mientras tanto, los pedidos pendientes de los últimos 30 minutos con ese cupón cuentan como «reservados» para respetar el límite. Si un pago se rechaza o se devuelve, el uso se libera.
+- **Cupones:** el uso se cuenta recién cuando el pago se aprueba. Mientras tanto, los pedidos pendientes dentro del tiempo de reserva (MINUTOS_RESERVA en src/lib/precios.js, hoy 30 minutos) con ese cupón cuentan como «reservados» para respetar el límite. Si un pago se rechaza o se devuelve, el uso se libera.
 - **Webhook:** valida la firma, consulta el pago a Mercado Pago y lo aplica al pedido de forma idempotente (si el mismo aviso llega dos veces, no duplica nada). Cada aviso queda en la tabla `mp_webhooks` (Supabase → Table Editor) para revisar problemas.
 - **Anti-abuso:** máximo 10 intentos de pago por IP cada 10 minutos (tabla `checkout_intentos`).
 - **Al volver de Mercado Pago**, `/gracias` muestra el número de pedido y el estado real de la base (si el aviso todavía no llegó, consulta el pago a Mercado Pago en el momento).
