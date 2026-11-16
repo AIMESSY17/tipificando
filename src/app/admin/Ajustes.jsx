@@ -94,10 +94,44 @@ export default function Ajustes() {
       <Administradores />
 
       <p className="adm-label">Cuenta</p>
+      <MiClave />
       <div className="adm-lista">
         <a className="adm-fila-nav" href="/" target="_blank" rel="noreferrer">Ver la tienda<i aria-hidden>↗</i></a>
         <button className="adm-fila-nav rojo" onClick={() => db.auth.signOut()}>Cerrar sesión <small>({session.user.email})</small></button>
       </div>
+    </>
+  );
+}
+
+function MiClave() {
+  const { db, toast } = useAdm();
+  const [abierto, setAbierto] = useState(false);
+  const [a, setA] = useState("");
+  const [b, setB] = useState("");
+  const [busy, setBusy] = useState(false);
+  const guardar = async (e) => {
+    e.preventDefault();
+    if (a.length < 8) return toast("La contraseña tiene que tener al menos 8 caracteres");
+    if (a !== b) return toast("Las dos contraseñas no coinciden");
+    setBusy(true);
+    const { error } = await db.auth.updateUser({ password: a });
+    setBusy(false);
+    if (error) return toast(/different|same/i.test(error.message) ? "Elegí una contraseña distinta a la actual" : "No se pudo guardar la contraseña. Probá de nuevo.");
+    setA(""); setB(""); setAbierto(false);
+    toast("Contraseña guardada ✓ Ya podés entrar con mail y contraseña");
+  };
+  return (
+    <>
+      <div className="adm-lista">
+        <button className="adm-fila-nav" onClick={() => setAbierto((x) => !x)} aria-expanded={abierto}>Crear / cambiar mi contraseña<i aria-hidden>{abierto ? "⌃" : "›"}</i></button>
+      </div>
+      {abierto && (
+        <form className="adm-grupo campos" onSubmit={guardar}>
+          <label>Contraseña nueva <small>(mínimo 8 caracteres)</small><input type="password" value={a} onChange={(e) => setA(e.target.value)} autoComplete="new-password" /></label>
+          <label>Repetila<input type="password" value={b} onChange={(e) => setB(e.target.value)} autoComplete="new-password" /></label>
+          <button className="adm-btn negro" disabled={busy || !a || !b}>{busy ? "Guardando…" : "Guardar contraseña"}</button>
+        </form>
+      )}
     </>
   );
 }

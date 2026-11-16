@@ -32,11 +32,15 @@ export default function Admin() {
 
   const [session, setSession] = useState(null);
   const [ok, setOk] = useState(null); // null = cargando, true/false = es admin
+  const [recuperando, setRecuperando] = useState(false); // volvió del mail de "olvidé mi contraseña"
 
   useEffect(() => {
     if (!db) return;
     db.auth.getSession().then(({ data }) => setSession(data.session));
-    const { data } = db.auth.onAuthStateChange((_e, s) => setSession(s));
+    const { data } = db.auth.onAuthStateChange((e, s) => {
+      if (e === "PASSWORD_RECOVERY") setRecuperando(true);
+      setSession(s);
+    });
     return () => data.subscription.unsubscribe();
   }, [db]);
 
@@ -52,6 +56,7 @@ export default function Admin() {
 
   if (!db) return <SinSupabase />;
   if (!session) return <Login db={db} />;
+  if (recuperando) return <NuevaClave db={db} onListo={() => setRecuperando(false)} />;
   if (ok === null) return <div className="adm-centro"><span className="adm-logo grande">tipificado…<i>|</i></span><p className="adm-cargando">Entrando…</p></div>;
   if (!ok)
     return (
@@ -214,31 +219,82 @@ function SinSupabase() {
 }
 
 function Login({ db }) {
+  const [modo, setModo] = useState("clave"); // clave | link | olvide
   const [email, setEmail] = useState("");
+  const [clave, setClave] = useState("");
   const [sent, setSent] = useState(false);
   const [err, setErr] = useState("");
   const [busy, setBusy] = useState(false);
+  const redirect = () => window.location.origin + "/admin";
   const go = async (e) => {
     e.preventDefault();
     setErr("");
     setBusy(true);
-    const { error } = await db.auth.signInWithOtp({ email, options: { emailRedirectTo: window.location.origin + "/admin" } });
+    if (modo === "clave") {
+      const { error } = await db.auth.signInWithPassword({ email: email.trim(), password: clave });
+      if (error) setErr("Mail o contraseña incorrectos. Si todavía no creaste una contraseña, entrá con el link al mail.");
+    } else {
+      const { error } = modo === "olvide"
+        ? await db.auth.resetPasswordForEmail(email.trim(), { redirectTo: redirect() })
+        : await db.auth.signInWithOtp({ email: email.trim(), options: { emailRedirectTo: redirect() } });
+      if (error) setErr(/rate|limit/i.test(error.message) ? "Pediste muchos mails seguidos. Esperá un minuto y probá de nuevo." : "No pudimos mandar el mail. Revisalo y probá de nuevo.");
+      else setSent(true);
+    }
     setBusy(false);
-    if (error) setErr(/rate|limit/i.test(error.message) ? "Pediste muchos links seguidos. Esperá un minuto y probá de nuevo." : "No pudimos mandar el link. Revisá el mail y probá de nuevo.");
-    else setSent(true);
   };
+  const cambiar = (m) => { setModo(m); setErr(""); setSent(false); };
   return (
     <div className="adm-centro">
       <span className="adm-logo grande">tipificado…<i>|</i></span>
       {sent ? (
-        <p>Te mandamos un link a <b>{email}</b>. Abrilo desde este mismo celular o compu para entrar.</p>
+        <>
+          <p>{modo === "olvide" ? "Te mandamos un mail a " : "Te mandamos un link a "}<b>{email}</b>. {modo === "olvide" ? "Abrilo para elegir una contraseña nueva." : "Abrilo desde este mismo celular o compu para entrar."}</p>
+          <button className="adm-link" onClick={() => cambiar("clave")}>Volver</button>
+        </>
       ) : (
         <form onSubmit={go} className="adm-form">
           <input type="email" required placeholder="tu mail" value={email} onChange={(e) => setEmail(e.target.value)} autoComplete="email" />
-          <button className="adm-btn negro" disabled={busy}>{busy ? "Mandando…" : "Entrar con link al mail"}</button>
+          {modo === "clave" && <input type="password" required placeholder="contraseña" value={clave} onChange={(e) => setClave(e.target.value)} autoComplete="current-password" />}
+          <button className="adm-btn negro" disabled={busy}>
+            {busy ? "Un momento…" : modo === "clave" ? "Entrar" : modo === "olvide" ? "Mandar mail de recuperación" : "Entrar con link al mail"}
+          </button>
           {err && <p className="adm-err">{err}</p>}
+          {modo === "clave" && <button type="button" className="adm-link" onClick={() => cambiar("olvide")}>¿Olvidaste tu contraseña?</button>}
+          {modo === "clave"
+            ? <button type="button" className="adm-link" onClick={() => cambiar("link")}>Entrar con un link al mail</button>
+            : <button type="button" className="adm-link" onClick={() => cambiar("clave")}>Entrar con contraseña</button>}
         </form>
       )}
+    </div>
+  );
+}
+
+// Pantalla a la que se llega desde el mail de recuperación
+function NuevaClave({ db, onListo }) {
+  const [a, setA] = useState("");
+  const [b, setB] = useState("");
+  const [err, setErr] = useState("");
+  const [busy, setBusy] = useState(false);
+  const go = async (e) => {
+    e.preventDefault();
+    if (a.length < 8) return setErr("La contraseña tiene que tener al menos 8 caracteres.");
+    if (a !== b) return setErr("Las dos contraseñas no coinciden.");
+    setBusy(true);
+    const { error } = await db.auth.updateUser({ password: a });
+    setBusy(false);
+    if (error) return setErr("No pudimos guardar la contraseña. Pedí otro mail de recuperación y probá de nuevo.");
+    onListo();
+  };
+  return (
+    <div className="adm-centro">
+      <span className="adm-logo grande">tipificado…<i>|</i></span>
+      <h1>Nueva contraseña</h1>
+      <form onSubmit={go} className="adm-form">
+        <input type="password" required placeholder="contraseña nueva" value={a} onChange={(e) => setA(e.target.value)} autoComplete="new-password" />
+        <input type="password" required placeholder="repetila" value={b} onChange={(e) => setB(e.target.value)} autoComplete="new-password" />
+        <button className="adm-btn negro" disabled={busy}>{busy ? "Guardando…" : "Guardar y entrar"}</button>
+        {err && <p className="adm-err">{err}</p>}
+      </form>
     </div>
   );
 }
