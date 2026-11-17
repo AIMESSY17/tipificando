@@ -1,6 +1,7 @@
 "use client";
 import { useEffect, useMemo, useState } from "react";
 import { VENTA } from "@/lib/precios";
+import { textoParaAndreani, linkSeguimiento } from "@/lib/envio";
 import {
   useAdm, useDatos, q, money, numPedido, fecha, fechaLarga, hace, Estado, ETIQUETA_ESTADO, PASOS,
   Buscador, Filtros, Titulo, Esqueleto, Vacio, ErrorCarga, Hoja, mensajeError, descargar,
@@ -33,7 +34,7 @@ export function mensajePara(o) {
     case "en produccion": return `${hola} Tu pedido ${n} ya está en producción 🔥 Te avisamos apenas esté listo.`;
     case "enviado": return retiro
       ? `${hola} Tu pedido ${n} ya está listo para retirar en el taller${o.shipping?.detalle ? " (" + o.shipping.detalle + ")" : ""}. ¡Te esperamos!`
-      : `${hola} Tu pedido ${n} ya salió 📦 En breve lo tenés en tu casa.`;
+      : `${hola} Tu pedido ${n} ya salió 📦${o.tracking_number ? ` Seguimiento Andreani: ${o.tracking_number} → ${linkSeguimiento(o.tracking_number)}` : " En breve lo tenés en tu casa."}`;
     case "entregado": return `${hola} ¿Llegó todo bien con tu pedido ${n}? Esperamos que lo disfrutes. Si le sacás una foto, nos encantaría verla ✨`;
     case "cancelado": return `${hola} Te escribimos por tu pedido ${n}: quedó cancelado. Cualquier duda, contestanos por acá.`;
     case "rechazado": return `${hola} Vimos que el pago de tu pedido ${n} no se completó. Si querés, te pasamos otra forma de pago.`;
@@ -64,13 +65,13 @@ export function BotonesContacto({ o, compacto }) {
 // ---------- CSV para Excel ----------
 function csv(pedidos) {
   const c = (v) => `"${String(v ?? "").replace(/"/g, '""')}"`;
-  const filas = [["Número", "Fecha", "Cliente", "Contacto", "Piezas", "Subtotal", "Descuento", "Cupón", "Entrega", "Costo de envío", "Total", "Estado", "Pago Mercado Pago", "Nota del cliente", "Notas internas"]];
+  const filas = [["Número", "Fecha", "Cliente", "Contacto", "Piezas", "Subtotal", "Descuento", "Cupón", "Entrega", "Costo de envío", "Total", "Estado", "Pago Mercado Pago", "Mail", "Seguimiento Andreani", "Nota del cliente", "Notas internas"]];
   for (const o of pedidos)
     filas.push([
       numPedido(o.number), new Date(o.created_at).toLocaleString("es-AR"), o.customer_name, o.contact,
       (o.items || []).map((it) => `${it.qty} x ${it.name} (${it.color})`).join(" | "),
       o.subtotal ?? o.total, o.discount || 0, o.coupon_code || "", o.shipping?.name || "", o.shipping_cost || 0, o.total,
-      ETIQUETA_ESTADO[o.status] || o.status, MP[o.mp_status] || "", o.note || "", o.internal_notes || "",
+      ETIQUETA_ESTADO[o.status] || o.status, MP[o.mp_status] || "", o.email || "", o.tracking_number || "", o.note || "", o.internal_notes || "",
     ]);
   // ";" y BOM: así Excel en castellano lo abre bien, con tildes
   return "﻿" + filas.map((f) => f.map(c).join(";")).join("\r\n");
@@ -191,6 +192,81 @@ export function FilaPedido({ o, onClick }) {
       </span>
       <span className="adm-fila-der"><b>{money(o.total)}</b><Estado s={o.status} /></span>
     </button>
+  );
+}
+
+// ===================== DESPACHO (Andreani) =====================
+// Datos para cargar el envío a mano en Andreani + número de seguimiento (le llega un mail al comprador)
+function Despacho({ o, onGuardado }) {
+  const { api, toast } = useAdm();
+  const d = o.shipping_detail;
+  const dest = d.destino || {};
+  const [num, setNum] = useState(o.tracking_number || "");
+  const [busy, setBusy] = useState(false);
+  const pagado = ["pagado", "en produccion", "enviado", "entregado"].includes(o.status);
+
+  const copiar = async () => {
+    try { await navigator.clipboard.writeText(textoParaAndreani(o)); toast("Datos copiados ✓ Pegalos en Andreani"); }
+    catch { window.prompt("Copiá los datos:", textoParaAndreani(o)); }
+  };
+  const guardar = async () => {
+    const t = num.trim();
+    if (!t) return toast("Pegá el número de seguimiento de Andreani");
+    setBusy(true);
+    const r = await api("admin/seguimiento", "POST", { id: o.id, tracking: t });
+    setBusy(false);
+    if (r.error) return toast(r.error, { dur: 4500 });
+    toast(
+      r.mail === "enviado" ? "Seguimiento guardado ✓ Le mandamos el mail al comprador"
+        : r.mail === "error" ? `Guardado, pero el mail no salió: ${r.motivo}`
+        : r.mail === "sin_mail" ? "Guardado ✓ (el comprador no dejó mail: avisale vos)"
+        : "Seguimiento guardado ✓",
+      { dur: 4500 }
+    );
+    onGuardado();
+  };
+
+  return (
+    <>
+      <p className="adm-label">Para despachar con Andreani</p>
+      <div className="adm-caja adm-despacho">
+        <div className="adm-dato"><span>Nombre</span><b>{o.customer_name}</b></div>
+        <div className="adm-dato"><span>Mail</span><b>{o.email || "No dejó mail"}</b></div>
+        <div className="adm-dato"><span>Teléfono / contacto</span><b>{o.contact || "—"}</b></div>
+        <div className="adm-dato"><span>Entrega</span><b>{d.modalidad === "sucursal" ? "A sucursal Andreani" : "A domicilio"}</b></div>
+        <div className="adm-dato"><span>{d.modalidad === "sucursal" ? "Sucursal" : "Dirección"}</span>
+          <b>{d.modalidad === "sucursal" ? dest.sucursal : `${dest.calle} ${dest.numero}${dest.piso ? `, ${dest.piso}` : ""}`}</b></div>
+        <div className="adm-dato"><span>Localidad</span><b>{dest.localidad}, {dest.provincia} (CP {dest.cp})</b></div>
+        {d.peso_g > 0 && <div className="adm-dato"><span>Peso</span><b>{d.peso_g} g</b></div>}
+        {d.medidas && <div className="adm-dato"><span>Medidas</span><b>{d.medidas.alto} × {d.medidas.ancho} × {d.medidas.largo} cm</b></div>}
+        <button className="adm-btn negro" onClick={copiar}>Copiar datos para Andreani</button>
+      </div>
+
+      <p className="adm-label">Envío cobrado al comprador</p>
+      <div className="adm-caja">
+        <div className="adm-dato"><span>Cobrado</span><b>{d.coordinar ? "A coordinar" : d.cobrado > 0 ? money(d.cobrado) : "Gratis"}</b></div>
+        {d.ref_precio != null && <div className="adm-dato"><span>Referencia ({d.ref_carrier}{d.demora ? ` · ${d.demora}` : ""})</span><b>{money(d.ref_precio)}</b></div>}
+        <p className="adm-ayuda">
+          {d.coordinar ? "No se pudo cotizar automáticamente: coordinalo por mensaje con el comprador."
+            : d.fuente === "respaldo" ? "Se cobró según la tabla de respaldo (Zipnova no respondió)."
+            : "Compará lo cobrado con lo que te cuesta en Andreani para afinar el factor en Envíos."}
+        </p>
+      </div>
+
+      <p className="adm-label">Número de seguimiento de Andreani</p>
+      <div className="adm-grupo">
+        <div className="adm-despacho-fila">
+          <input value={num} onChange={(e) => setNum(e.target.value)} placeholder="ej: 360003456789012" aria-label="Número de seguimiento" disabled={!pagado} />
+          <button className="adm-btn negro" onClick={guardar} disabled={busy || !pagado}>{busy ? "Guardando…" : o.tracking_number ? "Actualizar" : "Guardar y avisar"}</button>
+        </div>
+        <p className="adm-ayuda">
+          {!pagado ? "Se habilita cuando el pedido está pagado."
+            : o.tracking_number
+              ? <>Guardado. {o.tracking_sent_at ? `Mail enviado el ${fechaLarga(o.tracking_sent_at)}. ` : o.email ? "" : "El comprador no dejó mail. "}<a href={linkSeguimiento(o.tracking_number)} target="_blank" rel="noreferrer">Ver seguimiento ↗</a></>
+              : "Al guardarlo, el pedido pasa a «Enviado» y al comprador le llega un mail con el número y el link de seguimiento."}
+        </p>
+      </div>
+    </>
   );
 }
 
@@ -319,6 +395,8 @@ export function DetallePedido({ id, onCerrar }) {
             <div className="adm-dato"><span>Mercado Pago</span><b>{o.mp_status ? MP[o.mp_status] || o.mp_status : "Todavía no pagó"}</b></div>
             {o.payment_id && <div className="adm-dato"><span>N.º de pago</span><b className="mono">{o.payment_id}</b></div>}
           </div>
+
+          {o.shipping_detail?.destino && <Despacho o={o} onGuardado={() => { datos.recargar(); cambio(); }} />}
 
           {o.note && (
             <>

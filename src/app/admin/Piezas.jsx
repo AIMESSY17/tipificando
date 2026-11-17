@@ -5,6 +5,7 @@ import { quitarFondo, tieneTransparencia, encuadrar } from "@/lib/recorte";
 import { analizar, PARES } from "@/lib/arte";
 import { centroBase } from "@/lib/medir";
 import { enOferta, precioDe, piezaAgotada } from "@/lib/precios";
+import { tieneMedidas } from "@/lib/envio";
 import { Ambiente, EscenaAuto, PalabraGigante, fondoPared } from "@/components/Escena";
 import { useAdm, useDatos, q, money, Buscador, Filtros, Titulo, Esqueleto, Vacio, ErrorCarga, Interruptor, Segmento, Hoja, mensajeError } from "./ui";
 
@@ -126,7 +127,7 @@ export default function Piezas() {
     }
   };
 
-  const nueva = () => setEdit({ name: "", slug: "", category: "", price: 0, sale_price: null, badge: "", production_time: "", description: "", image_url: "", bg: PALETA[3], table_color: MESAS[0], word: "", pedestal: "", colors: [], glow: false, active: true, sort: list.length });
+  const nueva = () => setEdit({ name: "", slug: "", category: "", price: 0, sale_price: null, badge: "", production_time: "", description: "", image_url: "", bg: PALETA[3], table_color: MESAS[0], word: "", pedestal: "", colors: [], glow: false, active: true, sort: list.length, weight_g: null, height_cm: null, width_cm: null, length_cm: null, ship_estimado: false });
 
   return (
     <>
@@ -149,6 +150,12 @@ export default function Piezas() {
               <button className={!cat ? "on" : ""} onClick={() => setCat("")}>Todas las categorías</button>
               {cats.map((c) => <button key={c} className={cat === c ? "on" : ""} onClick={() => setCat(cat === c ? "" : c)}>{c}</button>)}
             </div>
+          )}
+          {list.some((p) => p.active && !tieneMedidas(p)) && (
+            <div className="adm-alerta">Faltan peso o medidas de la caja en: {list.filter((p) => p.active && !tieneMedidas(p)).map((p) => p.name).join(", ")}. Sin eso no se puede cotizar el envío por Andreani. Abrí la pieza y completalos.</div>
+          )}
+          {list.some((p) => p.ship_estimado && tieneMedidas(p)) && (
+            <p className="adm-ayuda">📦 Las piezas marcadas «Envío estimado» tienen peso y caja aproximados: pesalas ya embaladas y corregilos para que el costo sea justo.</p>
           )}
           <p className="adm-ayuda">{filtrando ? "Para reordenar, sacá la búsqueda y los filtros." : "Mantené apretado ≡ y arrastrá para cambiar el orden de la tienda."}</p>
           {!mostradas.length ? (
@@ -174,6 +181,7 @@ export default function Piezas() {
                         {enOferta(p) && <em className="ins-oferta">Oferta</em>}
                         {piezaAgotada(p) ? <em className="ins-agotada">Agotada</em> : (p.colors || []).some((c) => c.agotado) && <em className="ins-agotada suave">Algún color agotado</em>}
                         {!p.active && <em>Oculta</em>}
+                        {!tieneMedidas(p) ? <em className="ins-agotada suave">Sin peso/medidas</em> : p.ship_estimado && <em>Envío estimado</em>}
                       </span>
                     </button>
                     <div className="adm-fila-acc">
@@ -286,7 +294,7 @@ function Escenita({ p, foto, pedestalGeneral }) {
 // ===================== EDITOR =====================
 export function Editor({ prod, usados = [], pedestalGeneral = "travertino", produccionGeneral = "", ultimoSort = 0, onClose, onSaved }) {
   const { db, session, refrescarTienda, toast, confirmar } = useAdm();
-  const [p, setP] = useState({ ...prod, sale_price: prod.sale_price ?? null, badge: prod.badge || "", production_time: prod.production_time || "", colors: (prod.colors || []).map((c) => ({ ...c })) });
+  const [p, setP] = useState({ ...prod, sale_price: prod.sale_price ?? null, badge: prod.badge || "", production_time: prod.production_time || "", weight_g: prod.weight_g ?? null, height_cm: prod.height_cm ?? null, width_cm: prod.width_cm ?? null, length_cm: prod.length_cm ?? null, colors: (prod.colors || []).map((c) => ({ ...c })) });
   const [busy, setBusy] = useState("");
   const [err, setErr] = useState("");
   const [canRemove, setCanRemove] = useState(false);
@@ -295,7 +303,7 @@ export function Editor({ prod, usados = [], pedestalGeneral = "travertino", prod
   const set = (k, v) => setP((x) => ({ ...x, [k]: v }));
   const setColor = (i, patch) => setP((x) => ({ ...x, colors: x.colors.map((c, k) => (k === i ? { ...c, ...patch } : c)) }));
   const cambios = useRef(false);
-  useEffect(() => { cambios.current = JSON.stringify(p) !== JSON.stringify({ ...prod, sale_price: prod.sale_price ?? null, badge: prod.badge || "", production_time: prod.production_time || "", colors: prod.colors || [] }); }, [p, prod]);
+  useEffect(() => { cambios.current = JSON.stringify(p) !== JSON.stringify({ ...prod, sale_price: prod.sale_price ?? null, badge: prod.badge || "", production_time: prod.production_time || "", weight_g: prod.weight_g ?? null, height_cm: prod.height_cm ?? null, width_cm: prod.width_cm ?? null, length_cm: prod.length_cm ?? null, colors: prod.colors || [] }); }, [p, prod]);
 
   useEffect(() => {
     fetch("/api/quitar-fondo").then((r) => r.json()).then((j) => setCanRemove(Boolean(j.enabled))).catch(() => {});
@@ -376,6 +384,12 @@ export function Editor({ prod, usados = [], pedestalGeneral = "travertino", prod
     description: p.description.trim(), image_url: p.image_url, bg: p.bg, table_color: p.table_color || MESAS[0], word: (p.word || "").trim(), pedestal: p.pedestal || "",
     colors: p.colors.filter((c) => c.name.trim()).map((c) => Object.fromEntries(Object.entries({ ...c, name: c.name.trim() }).filter(([, v]) => v !== undefined && v !== "" && v !== false))),
     glow: p.glow, active: p.active, sort: p.sort ?? 0,
+    weight_g: Number(p.weight_g) > 0 ? Math.round(Number(p.weight_g)) : null,
+    height_cm: Number(p.height_cm) > 0 ? Number(p.height_cm) : null,
+    width_cm: Number(p.width_cm) > 0 ? Number(p.width_cm) : null,
+    length_cm: Number(p.length_cm) > 0 ? Number(p.length_cm) : null,
+    // si el dueño tocó el peso o la caja, dejan de ser «estimados»
+    ship_estimado: ["weight_g", "height_cm", "width_cm", "length_cm"].some((k) => Number(p[k] ?? 0) !== Number(prod[k] ?? 0)) ? false : !!prod.ship_estimado,
   });
 
   const guardar = async () => {
@@ -471,6 +485,17 @@ export function Editor({ prod, usados = [], pedestalGeneral = "travertino", prod
         <label>Descripción<textarea rows={3} value={p.description} onChange={(e) => set("description", e.target.value)} /></label>
         <label>Tiempo de producción <small>(si lo dejás vacío, usa el general)</small><input value={p.production_time} placeholder={produccionGeneral ? "General: " + produccionGeneral.slice(0, 60) : "ej: 15 a 20 días"} onChange={(e) => set("production_time", e.target.value)} /></label>
         <label>Palabra gigante de fondo <small>(opcional)</small><input value={p.word || ""} placeholder="ej: PANZONA" onChange={(e) => set("word", e.target.value.toUpperCase().slice(0, 12))} /></label>
+      </div>
+
+      <p className="adm-label">Envío: peso y caja {p.ship_estimado && <small>· valores estimados, revisalos</small>}</p>
+      <div className="adm-grupo campos">
+        <label>Peso con la pieza ya embalada <small>(gramos)</small><input inputMode="numeric" value={p.weight_g ?? ""} placeholder="ej: 800" onChange={(e) => set("weight_g", e.target.value.replace(/\D/g, "") || null)} /></label>
+        <div className="adm-tres">
+          <label>Alto <small>(cm)</small><input inputMode="decimal" value={p.height_cm ?? ""} placeholder="15" onChange={(e) => set("height_cm", e.target.value.replace(/[^\d.]/g, "") || null)} /></label>
+          <label>Ancho <small>(cm)</small><input inputMode="decimal" value={p.width_cm ?? ""} placeholder="15" onChange={(e) => set("width_cm", e.target.value.replace(/[^\d.]/g, "") || null)} /></label>
+          <label>Largo <small>(cm)</small><input inputMode="decimal" value={p.length_cm ?? ""} placeholder="15" onChange={(e) => set("length_cm", e.target.value.replace(/[^\d.]/g, "") || null)} /></label>
+        </div>
+        {!tieneMedidas(p) ? <p className="adm-aviso">⚠️ Sin peso y medidas completos no se puede cotizar el envío de esta pieza.</p> : <p className="adm-ayuda">Medidas de la caja con la que la mandás. Con esto se calcula el envío.</p>}
       </div>
 
       <p className="adm-label">Etiqueta en la tienda</p>

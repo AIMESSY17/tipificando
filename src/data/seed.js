@@ -13,15 +13,19 @@ export const seedSettings = {
   negocio_cuit: "",
   negocio_direccion: "",
   vacaciones: { activo: false, vuelta: "", mensaje: "" },
+  // Privados: no se mandan al navegador (ver page.jsx) ni los lee el público (ver schema.sql)
+  envio_cfg: { referencia: "andreani", factor: 1, margen: 10, redondeo: 100, gratis_desde: 0 },
+  envio_respaldo: {},
 };
 
 // Opciones de entrega por defecto
 export const seedEnvios = [
   { id: "retiro", kind: "retiro", name: "Retiro en el taller", address: "", hours: "Lunes a viernes de 10 a 18 h", price: 0, active: true, sort: 0 },
   { id: "coordinar", kind: "coordinar", name: "Envío a coordinar", address: "", hours: "", price: 0, active: true, sort: 1 },
+  { id: "andreani", kind: "andreani", name: "Envío por Andreani", address: "", hours: "", price: 0, active: true, sort: 2 },
 ];
 
-export const seedProducts = [
+const productosBase = [
   {
     slug: "pino-navidad",
     name: "Pino de navidad",
@@ -184,3 +188,19 @@ export const seedProducts = [
     ],
   },
 ].map((p, i) => ({ id: p.slug, active: true, sort: i, glow: false, ...p }));
+
+// Peso (g, ya embalada) y caja (cm). ESTIMADOS: el dueño los revisa desde el panel → Piezas.
+const caja = (weight_g, height_cm, width_cm, length_cm) => ({ weight_g, height_cm, width_cm, length_cm, ship_estimado: true });
+const CAJAS = {
+  "pino-navidad": caja(1000, 28, 18, 18),
+  "taza-panzona": caja(800, 15, 15, 15),
+  "platillo": caja(400, 8, 15, 15),
+  "portamacetas-rayado": caja(1200, 20, 20, 20),
+  "budinera": caja(1500, 12, 18, 32),
+  "taza-clasica": caja(800, 15, 15, 15),
+  "pochoclera": caja(1300, 20, 22, 22),
+  "portamacetas-moteado": caja(1200, 20, 20, 20),
+  "plato-hondo": caja(900, 12, 22, 22),
+  "tazon": caja(900, 12, 22, 22),
+};
+export const seedProducts = productosBase.map((p) => ({ ...p, ...CAJAS[p.slug] }));

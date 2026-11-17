@@ -301,6 +301,12 @@ img { display: block; max-width: 100%; }
 .opcion-envio span { display: grid; gap: 2px; }
 .opcion-envio small { font-size: 12px; color: rgba(42, 35, 32, 0.6); }
 .opcion-envio em { font-style: normal; font-family: var(--f-mono); font-size: 13px; white-space: nowrap; }
+/* Envío por Andreani: provincia, localidad, CP y domicilio / sucursal */
+.form select { font: inherit; font-size: 16px; padding: 12px 14px; border-radius: 14px; border: 1px solid rgba(42, 35, 32, 0.18);
+  background: #fff; color: var(--tinta); width: 100%; }
+.envio-and { display: grid; }
+.dos-col { display: grid; grid-template-columns: 1fr 1fr; gap: 0 10px; }
+.dos-col > label { min-width: 0; }
 .cupon { margin-bottom: 14px; }
 .cupon > .link { margin: 0; }
 .cupon-fila { display: grid; grid-template-columns: 1fr auto; gap: 8px; }

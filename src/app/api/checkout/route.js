@@ -1,6 +1,8 @@
 import { NextResponse } from "next/server";
 import { adminDb, cotizar, huellaIp, modoPrueba, pagosActivos, sitio } from "@/lib/server";
 import { MINUTOS_RESERVA, copiaEnvio, itemsParaMP } from "@/lib/precios";
+import { MODALIDADES } from "@/lib/envio";
+import { validarEntrega } from "@/lib/zipnova";
 
 // Crea el pedido y la preferencia de Mercado Pago (Checkout Pro).
 // Precios, cupón y envío SIEMPRE salen del servidor, nunca del navegador.
@@ -34,11 +36,52 @@ export async function POST(req) {
   const name = String(body.name || "").trim().slice(0, 80);
   const contact = String(body.contact || "").trim().slice(0, 80);
   const note = String(body.note || "").trim().slice(0, 500);
+  const email = String(body.email || "").trim().toLowerCase().slice(0, 120);
   if (!name) return err("Falta tu nombre", 400);
+  if (email && !/^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/.test(email)) return err("Ese mail no parece válido. Revisalo.", 400);
 
-  const c = await cotizar(body);
+  // Envío por Andreani: hace falta el destino completo y el mail para avisarte cuando salga
+  const entrega = body.destino ? validarEntrega(body.destino) : null;
+
+  const c = await cotizar(entrega?.destino ? { ...body, destino: entrega.destino } : body);
   if (c.error) return err(c.error, c.status || 400);
   if (c.code && c.cuponError) return err(c.cuponError + " Sacalo para seguir.", 400);
+
+  let envioCopia = copiaEnvio(c.envio);
+  let detalleEnvio = null;
+  if (c.envio?.kind === "andreani") {
+    if (!email) return err("Dejanos tu mail para avisarte cuando salga tu envío.", 400);
+    if (entrega?.error) return err(entrega.error, 400);
+    const a = c.auto;
+    const dest = entrega.destino;
+    if (!a || a.pendiente) return err("No pudimos calcular el envío. Revisá el código postal.", 400);
+    if (!a.coordinar && !a.seleccionada) return err("Esa modalidad no está disponible para tu destino. Elegí la otra.", 409);
+    const lugar = dest.modalidad === "sucursal"
+      ? `Sucursal Andreani: ${dest.sucursal}`
+      : `${dest.calle} ${dest.numero}${dest.piso ? `, ${dest.piso}` : ""}`;
+    const donde = `${dest.localidad}, ${dest.provincia} (${dest.cp})`;
+    envioCopia = {
+      ...envioCopia,
+      name: a.coordinar ? "Envío a coordinar (Andreani)" : `Envío por Andreani · ${MODALIDADES[dest.modalidad]}`,
+      detalle: `${lugar} · ${donde}`,
+      price: c.shipping_cost,
+    };
+    detalleEnvio = {
+      modalidad: dest.modalidad,
+      destino: dest,
+      peso_g: a.paquete?.peso_g ?? null,
+      medidas: a.paquete ? { alto: a.paquete.alto, ancho: a.paquete.ancho, largo: a.paquete.largo } : null,
+      fuente: a.fuente,
+      coordinar: a.coordinar,
+      ref_carrier: a.seleccionada?.carrier || null,
+      ref_precio: a.seleccionada?.ref ?? null,
+      cobrado: c.shipping_cost,
+      gratis: Boolean(a.gratis),
+      demora: a.seleccionada?.demora || "",
+    };
+  } else if (c.envio?.kind === "zona" && !email) {
+    return err("Dejanos tu mail para avisarte cuando salga tu envío.", 400);
+  }
 
   const items = itemsParaMP(c.items, c.discount, c.cupon?.code);
   if (!items.length) return err("Con ese cupón el pedido queda sin cargo: mandanos el pedido por DM y lo coordinamos.", 400);
@@ -47,12 +90,17 @@ export async function POST(req) {
   const vence = new Date(Date.now() + MINUTOS_RESERVA * 60_000).toISOString();
 
   // Pedido + reserva del cupón, todo junto y atómico (respeta el límite aunque compren dos a la vez)
-  const { data: pedido, error } = await db.rpc("crear_pedido", {
+  const args = {
     p_vence: vence,
     p_customer_name: name, p_contact: contact, p_note: note, p_items: c.items,
     p_subtotal: c.subtotal, p_discount: c.discount, p_coupon_code: c.cupon?.code || null,
-    p_shipping: copiaEnvio(c.envio), p_shipping_cost: c.shipping_cost, p_total: c.total,
-  });
+    p_shipping: envioCopia, p_shipping_cost: c.shipping_cost, p_total: c.total,
+  };
+  let { data: pedido, error } = await db.rpc("crear_pedido", { ...args, p_email: email || null, p_shipping_detail: detalleEnvio });
+  // Si todavía no se corrió el schema nuevo (la función no tiene mail ni detalle de envío), se crea igual como antes
+  if (error && /PGRST202|could not find the function/i.test(`${error.code} ${error.message}`) && !detalleEnvio) {
+    ({ data: pedido, error } = await db.rpc("crear_pedido", args));
+  }
   if (error) {
     if (/cupon_no_disponible/.test(error.message)) return err("Ese cupón ya no está disponible. Sacalo para seguir.", 409);
     console.error("crear_pedido:", error.message);
@@ -63,7 +111,7 @@ export async function POST(req) {
   const volver = `${site}/gracias?pedido=${orderId}`;
   const pref = {
     items,
-    payer: { name },
+    payer: { name, ...(email ? { email } : {}) },
     external_reference: String(orderId),
     statement_descriptor: "TIPIFICADO",
     back_urls: { success: volver, pending: volver, failure: volver },

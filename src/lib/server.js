@@ -4,6 +4,8 @@ import { unstable_cache } from "next/cache";
 import { createClient } from "@supabase/supabase-js";
 import { seedProducts, seedSettings, seedEnvios } from "@/data/seed";
 import { armarItems, totales, normalizarCodigo, problemaCupon } from "@/lib/precios";
+import { cfgEnvio } from "@/lib/envio";
+import { cotizarAndreani, destinoParaCotizar } from "@/lib/zipnova";
 
 const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
 const anon = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
@@ -85,7 +87,25 @@ export async function cotizar(body = {}) {
     cuponError = problemaCupon(row);
     if (!cuponError) cupon = row;
   }
-  return { items, envio, cupon, cuponError, code, ...totales(items, cupon, envio) };
+  const t = totales(items, cupon, envio);
+  // Envío por Andreani: cotizado en vivo (Zipnova) con la misma función que usa el checkout
+  let auto = null;
+  if (envio?.kind === "andreani") {
+    auto = await envioAndreani({ items, products, settings, body, subtotal: t.subtotal, descuento: t.discount });
+    t.shipping_cost = auto.cobrado;
+    t.total = t.subtotal - t.discount + t.shipping_cost;
+  }
+  return { items, envio, cupon, cuponError, code, auto, ...t };
+}
+
+async function envioAndreani({ items, products, settings, body, subtotal, descuento }) {
+  const destino = destinoParaCotizar(body.destino);
+  if (!destino) return { pendiente: true, modalidades: {}, cobrado: 0, coordinar: false };
+  const cfg = cfgEnvio(settings.envio_cfg);
+  const r = await cotizarAndreani({ items, products, destino, cfg, respaldo: settings.envio_respaldo, subtotal, gratisSobre: subtotal - descuento });
+  const modalidad = body.destino?.modalidad === "sucursal" ? "sucursal" : "domicilio";
+  const seleccionada = r.modalidades[modalidad] || null;
+  return { ...r, pendiente: false, destino, modalidad, seleccionada, cobrado: seleccionada?.precio || 0, coordinar: r.fuente === "coordinar" };
 }
 
 // Verifica que el token del navegador sea de un admin cargado en la tabla admins.

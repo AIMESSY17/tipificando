@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { adminDb, requireAdmin, faltantes, modoPrueba, sitio } from "@/lib/server";
 import { mailsActivos, enviarMail } from "@/lib/pagos";
+import { zipnovaActivo } from "@/lib/zipnova";
 
 // "Estado de la tienda" para Ajustes. Solo admins. NUNCA devuelve claves.
 export const dynamic = "force-dynamic";
@@ -72,6 +73,9 @@ export async function GET(req) {
       ? item(true, "Aviso de pagos (webhook)", "Con clave secreta: solo se aceptan avisos firmados por Mercado Pago.")
       : item(false, "Aviso de pagos (webhook)", "Falta MP_WEBHOOK_SECRET: sin ella se rechazan los avisos y los pedidos no pasan solos a «Pagado»."),
     sitioOk(req),
+    zipnovaActivo()
+      ? item(true, "Cotización de envíos (Zipnova)", "Configurada: el costo de Andreani se calcula solo al pagar.")
+      : { ...item(null, "Cotización de envíos (Zipnova)", "Faltan ZIPNOVA_KEY, ZIPNOVA_SECRET, ZIPNOVA_ACCOUNT_ID o ZIPNOVA_ORIGIN_ID: el envío sale de la tabla de respaldo o «a coordinar»."), opcional: true },
     mailsActivos()
       ? item(true, "Mail al dueño", `Cuando entra un pago, llega un mail a ${process.env.MAIL_DUENO}.`)
       : { ...item(null, "Mail al dueño", "Desactivado (opcional). Con RESEND_API_KEY y MAIL_DUENO llega un mail con cada pago. El aviso en el panel funciona igual."), opcional: true },

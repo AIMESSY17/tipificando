@@ -369,3 +369,20 @@
   .cpb { box-shadow: none; padding: 0; max-width: none; }
   @page { margin: 16mm; }
 }
+
+/* ---------- Envíos: cotización automática (Andreani vía Zipnova) ---------- */
+.adm-detalles { background: #fff; border-radius: 14px; padding: 12px 14px; margin: 10px 0 14px; }
+.adm-detalles > summary { cursor: pointer; font-weight: 600; font-size: 15px; }
+.adm-detalles > summary small { color: var(--gris); font-weight: 400; }
+.adm-respaldo { display: grid; grid-template-columns: 1fr 96px 96px; gap: 6px 8px; align-items: center; margin-top: 10px; font-size: 14px; }
+.adm-respaldo > b { font-size: 11.5px; color: var(--gris2); text-transform: uppercase; letter-spacing: 0.04em; }
+.adm-respaldo-fila { display: contents; }
+.adm-respaldo input, .adm-sim-linea input { font: inherit; font-size: 15px; padding: 8px 10px; border-radius: 9px; border: 0; background: var(--fondo); color: var(--texto); width: 100%; min-width: 0; }
+.adm-sim-linea { display: grid; grid-template-columns: 1fr 64px auto; gap: 8px; align-items: center; }
+.adm-sim-linea select { min-width: 0; }
+/* Pedido: datos para despachar */
+.adm-despacho { display: grid; gap: 6px; }
+.adm-despacho .adm-btn { margin-top: 6px; }
+.adm-despacho-fila { display: grid; grid-template-columns: 1fr auto; gap: 8px; }
+.adm-tres { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; }
+.adm-tres label { min-width: 0; }

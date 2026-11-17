@@ -25,7 +25,9 @@ insert into settings (key, value) values
 ('negocio_nombre', '""'::jsonb),
 ('negocio_cuit', '""'::jsonb),
 ('negocio_direccion', '""'::jsonb),
-('vacaciones', '{"activo": false, "vuelta": "", "mensaje": ""}'::jsonb)
+('vacaciones', '{"activo": false, "vuelta": "", "mensaje": ""}'::jsonb),
+('envio_cfg', '{"referencia": "andreani", "factor": 1, "margen": 10, "redondeo": 100, "gratis_desde": 0}'::jsonb),
+('envio_respaldo', '{}'::jsonb)
 on conflict (key) do nothing;
 
 -- Opciones de entrega por defecto (solo si todavía no hay ninguna)
@@ -35,3 +37,25 @@ select * from (values
   ('coordinar', 'Envío a coordinar', '', '', 0, 1)
 ) as v(kind, name, address, hours, price, sort)
 where not exists (select 1 from shipping_options);
+
+-- Opción «Envío por Andreani» (cotizada en vivo con Zipnova). Se agrega una sola vez.
+insert into shipping_options (kind, name, address, hours, price, sort)
+select 'andreani', 'Envío por Andreani', '', '', 0, coalesce((select max(sort) + 1 from shipping_options), 0)
+where not exists (select 1 from shipping_options where kind = 'andreani');
+
+-- Peso (g, ya embalada) y caja (cm) de las 10 piezas. ESTIMADOS: revisarlos en el panel → Piezas.
+-- Solo completa las piezas que todavía no tienen peso cargado (no pisa lo que ya editaste).
+update products p set weight_g = v.peso, height_cm = v.alto, width_cm = v.ancho, length_cm = v.largo, ship_estimado = true
+from (values
+  ('taza-panzona', 800, 15, 15, 15),
+  ('taza-clasica', 800, 15, 15, 15),
+  ('platillo', 400, 8, 15, 15),
+  ('plato-hondo', 900, 12, 22, 22),
+  ('tazon', 900, 12, 22, 22),
+  ('portamacetas-rayado', 1200, 20, 20, 20),
+  ('portamacetas-moteado', 1200, 20, 20, 20),
+  ('budinera', 1500, 12, 18, 32),
+  ('pochoclera', 1300, 20, 22, 22),
+  ('pino-navidad', 1000, 28, 18, 18)
+) as v(slug, peso, alto, ancho, largo)
+where p.slug = v.slug and p.weight_g is null;

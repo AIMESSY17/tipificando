@@ -5,6 +5,7 @@ import { Fondo, Ambiente, EscenaAuto, PalabraGigante } from "./Escena";
 import { NombreTipeado, Contador, Loader } from "./Effects";
 import { money, isLight, orderText, vivo } from "@/lib/format";
 import { precioDe, enOferta, primerColorLibre, nombreEnvio, detalleEnvio, costoEnvio, copiaEnvio, normalizarCodigo } from "@/lib/precios";
+import { PROVINCIAS, MODALIDADES, normalizarCp } from "@/lib/envio";
 import { centroBase, medidas, estilo } from "@/lib/medir";
 import { fotoChica, usarChica, cargarImagen } from "@/lib/fotos";
 import { pedirGiroscopio } from "@/lib/inclinacion";
@@ -586,8 +587,13 @@ function Carrito({ cart, setCart, vacaciones, onClose, onPay }) {
 function Pagar({ cart, settings, envios, vacaciones, pagos, onBack, onClose, flash }) {
   const [name, setName] = useState("");
   const [contact, setContact] = useState("");
+  const [email, setEmail] = useState("");
   const [note, setNote] = useState("");
   const [envioId, setEnvioId] = useState(envios[0]?.id ?? null);
+  // Envío por Andreani: destino y modalidad (el precio lo calcula el servidor)
+  const [dest, setDest] = useState({ provincia: "", localidad: "", cp: "", modalidad: "domicilio", calle: "", numero: "", piso: "", sucursal: "" });
+  const setD = (k, v) => setDest((d) => ({ ...d, [k]: v }));
+  const [cotizando, setCotizando] = useState(false);
   const [cuponAbierto, setCuponAbierto] = useState(false);
   const [cupon, setCupon] = useState("");
   const [cuponAplicado, setCuponAplicado] = useState("");
@@ -596,36 +602,60 @@ function Pagar({ cart, settings, envios, vacaciones, pagos, onBack, onClose, fla
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState("");
   const envio = envios.find((e) => e.id === envioId) || null;
+  const esAndreani = envio?.kind === "andreani";
   const items = useMemo(() => cart.map(({ id, color, qty }) => ({ id, color, qty })), [cart]);
   const clave = JSON.stringify(items);
+  // destino que se cotiza (con una pausita mientras escribe, para no cotizar letra por letra)
+  const destClave = esAndreani ? JSON.stringify([dest.provincia, dest.localidad.trim().toLowerCase(), normalizarCp(dest.cp), dest.modalidad]) : "";
+  const [destQ, setDestQ] = useState(destClave);
+  useEffect(() => {
+    const t = setTimeout(() => setDestQ(destClave), 450);
+    return () => clearTimeout(t);
+  }, [destClave]);
+  const esperando = esAndreani && (cotizando || destQ !== destClave);
 
   useEffect(() => {
     let vivo = true;
+    setCotizando(true);
     fetch("/api/cotizar", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ items, coupon: cuponAplicado, shippingId: envioId }),
+      body: JSON.stringify({ items, coupon: cuponAplicado, shippingId: envioId, destino: esAndreani ? { provincia: dest.provincia, localidad: dest.localidad, cp: dest.cp, modalidad: dest.modalidad } : undefined }),
     })
       .then((r) => r.json().then((j) => ({ ok: r.ok, j })))
       .then(({ ok, j }) => {
         if (!vivo) return;
+        setCotizando(false);
         if (!ok) { setErr(j.error || ""); return; }
         setErr("");
+        // si la modalidad elegida no existe para ese destino pero la otra sí, se pasa a la otra
+        const a = j.andreani;
+        if (a && !a.pendiente && !a.coordinar) {
+          const otra = a.modalidad === "domicilio" ? "sucursal" : "domicilio";
+          if (!a.modalidades[a.modalidad] && a.modalidades[otra]) setDest((d) => (d.modalidad === a.modalidad ? { ...d, modalidad: otra } : d));
+        }
         if (cuponAplicado) {
           if (j.cuponError) { setCuponMsg({ ok: false, txt: j.cuponError }); setCuponAplicado(""); }
           else setCuponMsg({ ok: true, txt: `Cupón ${j.cupon.code}: ${j.cupon.texto}` });
         }
         setQ(j);
       })
-      .catch(() => {});
+      .catch(() => { if (vivo) setCotizando(false); });
     return () => { vivo = false; };
-  }, [clave, cuponAplicado, envioId]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [clave, cuponAplicado, envioId, destQ]); // eslint-disable-line react-hooks/exhaustive-deps
 
+  const andr = esAndreani ? q?.andreani : null;
   const subtotalLocal = cart.reduce((s, it) => s + it.price * it.qty, 0);
   const t = q || { subtotal: subtotalLocal, discount: 0, shipping_cost: costoEnvio(envio), total: subtotalLocal + costoEnvio(envio) };
+  const envioTxt = useMemo(() => {
+    const base = copiaEnvio(envio);
+    if (!esAndreani || !base) return base;
+    const lugar = [dest.localidad.trim(), dest.provincia].filter(Boolean).join(", ");
+    return { ...base, name: `Envío por Andreani ${dest.modalidad === "sucursal" ? "a sucursal" : "a domicilio"}${lugar ? ` (${lugar})` : ""}` };
+  }, [envio, esAndreani, dest.modalidad, dest.localidad, dest.provincia]);
   const text = useMemo(
-    () => orderText(cart, { name, contact, note, envio: copiaEnvio(envio), cupon: q?.cupon?.code, t }),
-    [cart, name, contact, note, envio, q, t]
+    () => orderText(cart, { name, contact: [contact, email].filter(Boolean).join(" · "), note, envio: envioTxt, cupon: q?.cupon?.code, t }),
+    [cart, name, contact, email, note, envioTxt, q, t]
   );
 
   const aplicar = () => {
@@ -653,13 +683,24 @@ function Pagar({ cart, settings, envios, vacaciones, pagos, onBack, onClose, fla
   const mp = async () => {
     if (!name.trim()) return setErr("Poné tu nombre así sabemos de quién es el pedido.");
     if (!contact.trim()) return setErr("Dejanos un WhatsApp o Instagram para avisarte cómo va tu pedido.");
+    const conEnvio = esAndreani || envio?.kind === "zona";
+    if ((conEnvio || email.trim()) && !/^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/.test(email.trim())) return setErr("Poné tu mail así te avisamos cuando salga el envío.");
+    if (esAndreani) {
+      if (!dest.provincia) return setErr("Elegí tu provincia.");
+      if (dest.localidad.trim().length < 2) return setErr("Poné tu localidad.");
+      if (normalizarCp(dest.cp).length !== 4) return setErr("Poné tu código postal (4 números).");
+      if (dest.modalidad === "domicilio" && (!dest.calle.trim() || !dest.numero.trim())) return setErr("Poné la calle y el número de tu domicilio.");
+      if (dest.modalidad === "sucursal" && dest.sucursal.trim().length < 3) return setErr("Contanos a qué sucursal Andreani te lo mandamos.");
+      if (!andr || andr.pendiente) return setErr("Estamos calculando tu envío. Probá de nuevo en un segundo.");
+      if (!andr.coordinar && !andr.modalidades[dest.modalidad]) return setErr("Esa modalidad no está disponible para tu destino. Elegí la otra.");
+    }
     setErr("");
     setBusy(true);
     try {
       const r = await fetch("/api/checkout", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ name, contact, note, coupon: cuponAplicado, shippingId: envioId, items }),
+        body: JSON.stringify({ name, contact, email: email.trim(), note, coupon: cuponAplicado, shippingId: envioId, items, destino: esAndreani ? { ...dest, cp: normalizarCp(dest.cp) } : undefined }),
       });
       const j = await r.json();
       if (!r.ok || !j.url) throw new Error(j.error || "Error");
@@ -677,6 +718,7 @@ function Pagar({ cart, settings, envios, vacaciones, pagos, onBack, onClose, fla
         <div className="lista form">
           <label>Tu nombre<input value={name} onChange={(e) => setName(e.target.value)} autoComplete="name" /></label>
           <label>Tu WhatsApp o Instagram<input value={contact} onChange={(e) => setContact(e.target.value)} placeholder="ej: 11 5555 5555 o @tuusuario" autoComplete="tel" /></label>
+          <label>Tu mail{esAndreani || envio?.kind === "zona" ? "" : " (opcional)"}<input type="email" value={email} onChange={(e) => setEmail(e.target.value)} placeholder="para avisarte cuando salga tu envío" autoComplete="email" inputMode="email" /></label>
 
           {envios.length > 0 && (
             <fieldset className="entrega">
@@ -689,6 +731,50 @@ function Pagar({ cart, settings, envios, vacaciones, pagos, onBack, onClose, fla
                 </label>
               ))}
             </fieldset>
+          )}
+
+          {esAndreani && (
+            <div className="envio-and">
+              <label>Provincia
+                <select value={dest.provincia} onChange={(e) => setD("provincia", e.target.value)} autoComplete="address-level1">
+                  <option value="">Elegí tu provincia</option>
+                  {PROVINCIAS.map((p) => <option key={p} value={p}>{p}</option>)}
+                </select>
+              </label>
+              <div className="dos-col">
+                <label>Localidad<input value={dest.localidad} onChange={(e) => setD("localidad", e.target.value)} autoComplete="address-level2" /></label>
+                <label>Código postal<input value={dest.cp} onChange={(e) => setD("cp", e.target.value.slice(0, 8))} inputMode="numeric" autoComplete="postal-code" placeholder="ej: 5000" /></label>
+              </div>
+              <fieldset className="entrega">
+                <legend>¿Dónde lo recibís?</legend>
+                {Object.entries(MODALIDADES).map(([m, titulo]) => {
+                  const op = andr?.modalidades?.[m];
+                  const detalle = !andr || andr.pendiente ? "Completá provincia, localidad y código postal"
+                    : esperando ? "Calculando…" : andr.coordinar ? "Lo coordinamos después de pagar" : !op ? "No disponible para tu destino" : op.demora || "";
+                  const precio = !andr || andr.pendiente || esperando ? "—" : andr.coordinar ? "A coordinar" : !op ? "—" : op.precio > 0 ? money(op.precio) : "Gratis";
+                  return (
+                    <label key={m} className={"opcion-envio" + (dest.modalidad === m ? " on" : "")}>
+                      <input type="radio" name="modalidad" checked={dest.modalidad === m} onChange={() => setD("modalidad", m)} />
+                      <span><b>{titulo}</b><small>{detalle}</small></span>
+                      <em>{precio}</em>
+                    </label>
+                  );
+                })}
+              </fieldset>
+              {dest.modalidad === "domicilio" ? (
+                <>
+                  <label>Calle<input value={dest.calle} onChange={(e) => setD("calle", e.target.value)} autoComplete="address-line1" /></label>
+                  <div className="dos-col">
+                    <label>Número<input value={dest.numero} onChange={(e) => setD("numero", e.target.value)} inputMode="numeric" /></label>
+                    <label>Piso / depto (opcional)<input value={dest.piso} onChange={(e) => setD("piso", e.target.value)} autoComplete="address-line2" /></label>
+                  </div>
+                </>
+              ) : (
+                <label>¿A qué sucursal Andreani te lo mandamos?<input value={dest.sucursal} onChange={(e) => setD("sucursal", e.target.value)} placeholder="ej: Sucursal Córdoba Centro" /></label>
+              )}
+              {andr?.coordinar && !esperando && <p className="nota">No pudimos calcular el envío automáticamente. Pagás solo las piezas y el envío lo coordinamos por mensaje.</p>}
+              {andr?.gratis && !esperando && <p className="nota">¡Envío gratis en esta compra! ✦</p>}
+            </div>
           )}
 
           <div className="cupon">
@@ -720,7 +806,7 @@ function Pagar({ cart, settings, envios, vacaciones, pagos, onBack, onClose, fla
           )}
           <div className="total"><span>Total a pagar</span><b>{money(t.total)}</b></div>
           {err && <p className="error">{err}</p>}
-          {pagos && <button className="btn-azul" onClick={mp} disabled={busy || !!vacaciones}>{busy ? "Abriendo Mercado Pago…" : "Pagar con Mercado Pago"}</button>}
+          {pagos && <button className="btn-azul" onClick={mp} disabled={busy || !!vacaciones || esperando}>{busy ? "Abriendo Mercado Pago…" : "Pagar con Mercado Pago"}</button>}
           <button className={pagos ? "btn-linea" : "btn-azul"} onClick={copy}>Copiar pedido</button>
           <button className="btn-linea" onClick={dm}>Enviar por DM de Instagram</button>
           <button className="btn-gris" onClick={onBack}>Volver al carrito</button>

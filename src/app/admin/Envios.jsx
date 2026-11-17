@@ -1,10 +1,11 @@
 "use client";
 import { useState } from "react";
 import { nombreEnvio, detalleEnvio, costoEnvio } from "@/lib/precios";
+import EnviosAuto from "./EnviosAuto";
 import { useAdm, useDatos, q, money, Titulo, Esqueleto, Vacio, ErrorCarga, Hoja, Interruptor, Segmento, mensajeError } from "./ui";
 
-const TIPOS = [["retiro", "Retiro en el taller"], ["coordinar", "Envío a coordinar"], ["zona", "Costo fijo por zona"]];
-const ICONO = { retiro: "🏠", coordinar: "💬", zona: "📦" };
+const TIPOS = [["andreani", "Andreani"], ["retiro", "Retiro"], ["coordinar", "A coordinar"], ["zona", "Costo fijo"]];
+const ICONO = { retiro: "🏠", coordinar: "💬", zona: "📦", andreani: "🚚" };
 
 export default function Envios() {
   const { db, toast, refrescarTienda } = useAdm();
@@ -51,7 +52,7 @@ export default function Envios() {
                 <span className="adm-ic-envio" aria-hidden>{ICONO[e.kind]}</span>
                 <button className="adm-fila-txt" onClick={() => setEdit(e)}>
                   <b>{nombreEnvio(e)}</b>
-                  <small>{e.kind === "zona" ? money(costoEnvio(e)) : detalleEnvio(e)}</small>
+                  <small>{e.kind === "zona" ? money(costoEnvio(e)) : e.kind === "andreani" ? "Se cotiza solo con el código postal" : detalleEnvio(e)}</small>
                 </button>
                 <div className="adm-fila-acc">
                   <span className="adm-flechas">
@@ -65,6 +66,7 @@ export default function Envios() {
           </div>
         </>
       )}
+      <EnviosAuto />
       {edit && <EditorEnvio e={edit} onCerrar={() => setEdit(null)} onGuardado={() => { setEdit(null); datos.recargar(); }} />}
     </>
   );
@@ -82,7 +84,7 @@ function EditorEnvio({ e: e0, onCerrar, onGuardado }) {
     if (e.kind === "zona" && !(parseInt(e.price, 10) > 0)) return setErr("Poné el costo del envío.");
     const row = {
       kind: e.kind,
-      name: e.name.trim() || (e.kind === "retiro" ? "Retiro en el taller" : e.kind === "coordinar" ? "Envío a coordinar" : ""),
+      name: e.name.trim() || (e.kind === "retiro" ? "Retiro en el taller" : e.kind === "coordinar" ? "Envío a coordinar" : e.kind === "andreani" ? "Envío por Andreani" : ""),
       price: e.kind === "zona" ? parseInt(e.price, 10) : 0,
       address: e.kind === "retiro" ? e.address.trim() : "",
       hours: e.kind === "retiro" ? e.hours.trim() : "",
@@ -120,6 +122,12 @@ function EditorEnvio({ e: e0, onCerrar, onGuardado }) {
             <label>Nombre<input value={e.name} onChange={(x) => set("name", x.target.value)} placeholder="Retiro en el taller" /></label>
             <label>Dirección <small>(se muestra al elegirla)</small><input value={e.address} onChange={(x) => set("address", x.target.value)} placeholder="ej: Villa Crespo, CABA (te pasamos la dirección exacta)" /></label>
             <label>Horario<input value={e.hours} onChange={(x) => set("hours", x.target.value)} placeholder="ej: Lunes a viernes de 10 a 18 h" /></label>
+          </>
+        )}
+        {e.kind === "andreani" && (
+          <>
+            <label>Nombre<input value={e.name} onChange={(x) => set("name", x.target.value)} placeholder="Envío por Andreani" /></label>
+            <p className="adm-ayuda">El costo se calcula solo según el código postal del cliente (más abajo, en «Cotización automática», ajustás cómo). El envío real lo despachás vos con tu cuenta de Andreani.</p>
           </>
         )}
         {e.kind === "coordinar" && (

@@ -3,6 +3,7 @@ import crypto from "node:crypto";
 import { adminDb, sitio } from "@/lib/server";
 import { money } from "@/lib/format";
 import { numPedido } from "@/lib/precios";
+import { linkSeguimiento } from "@/lib/envio";
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 export const esUuid = (s) => UUID.test(String(s || ""));
@@ -105,6 +106,49 @@ export async function enviarMail({ asunto, html, texto }) {
   return { ok: true };
 }
 
+// Mail a un comprador (solo hace falta RESEND_API_KEY). Para llegar a cualquier casilla, MAIL_DESDE tiene que usar un dominio verificado en Resend.
+export async function enviarMailA({ to, asunto, html, texto }) {
+  if (!process.env.RESEND_API_KEY) return { ok: false, motivo: "Falta RESEND_API_KEY" };
+  const r = await fetch("https://api.resend.com/emails", {
+    method: "POST",
+    headers: { Authorization: `Bearer ${process.env.RESEND_API_KEY}`, "Content-Type": "application/json" },
+    body: JSON.stringify({ from: remitente(), to: [to], subject: asunto, html, text: texto }),
+    signal: AbortSignal.timeout(8000),
+  });
+  if (!r.ok) {
+    const j = await r.json().catch(() => ({}));
+    return { ok: false, motivo: j.message || `Resend respondió ${r.status}` };
+  }
+  return { ok: true };
+}
+
+// Mail al comprador cuando el dueño carga el número de seguimiento de Andreani
+export async function avisarEnvio(o, tracking) {
+  const num = numPedido(o.number);
+  const nombre = String(o.customer_name || "").split(" ")[0];
+  const link = linkSeguimiento(tracking);
+  const texto = `¡Hola${nombre ? " " + nombre : ""}! Tu pedido ${num} de tipificado ya salió 📦
+
+Número de seguimiento Andreani: ${tracking}
+Seguilo acá: ${link}
+
+Cualquier duda, contestá este mail o escribinos por Instagram. ¡Gracias por elegirnos!`;
+  const html = `<div style="background:#f6f0e4;padding:28px 16px;font-family:system-ui,-apple-system,'Segoe UI',sans-serif;color:#26201c">
+<div style="max-width:480px;margin:0 auto">
+<div style="font-family:Georgia,'Times New Roman',serif;font-size:26px;letter-spacing:-0.5px;margin-bottom:18px">tipificado…<span style="opacity:.55">|</span></div>
+<div style="background:#fff;border-radius:18px;padding:26px 24px;line-height:1.55;font-size:15px">
+<h2 style="margin:0 0 8px;font-family:Georgia,'Times New Roman',serif;font-weight:400;font-size:24px">Tu pedido ya salió 📦</h2>
+<p style="margin:0 0 18px;color:#6b625b">Hola${nombre ? " " + esc(nombre) : ""}, el pedido ${esc(num)} ya está en camino con Andreani.</p>
+<p style="margin:0 0 4px;font-size:12px;letter-spacing:.08em;text-transform:uppercase;color:#6b625b">Número de seguimiento</p>
+<p style="margin:0 0 20px;font-family:ui-monospace,Menlo,Consolas,monospace;font-size:20px">${esc(tracking)}</p>
+<a href="${esc(link)}" style="display:inline-block;background:#26201c;color:#fff;padding:12px 20px;border-radius:99px;text-decoration:none;font-weight:600">Seguir mi envío</a>
+<p style="margin:22px 0 0;font-size:13px;color:#6b625b">Si el link no abre, entrá a andreani.com y pegá el número en «Seguí tu envío».</p>
+</div>
+<p style="text-align:center;font-size:12px;color:#8a8077;margin-top:16px">Gracias por elegir cerámica hecha a mano ✦</p>
+</div></div>`;
+  return enviarMailA({ to: o.email, asunto: `Tu pedido ${num} ya salió 📦 · tipificado`, html, texto });
+}
+
 const esc = (s) => String(s ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[c]);
 
 async function avisarDueno(db, orderId) {
@@ -123,6 +167,7 @@ async function avisarDueno(db, orderId) {
     "",
     `Cliente: ${o.customer_name}`,
     o.contact ? `Contacto: ${o.contact}` : null,
+    o.email ? `Mail: ${o.email}` : null,
     o.shipping?.detalle ? `Entrega: ${o.shipping.detalle}` : null,
     o.note ? `Nota: ${o.note}` : null,
     o.payment_id ? `Operación de Mercado Pago: ${o.payment_id}` : null,

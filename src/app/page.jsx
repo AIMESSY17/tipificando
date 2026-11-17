@@ -25,7 +25,11 @@ export async function generateMetadata({ searchParams }) {
 
 export default async function Home({ searchParams }) {
   const { pieza } = await searchParams;
-  const { products, settings, envios } = await getCatalog();
-  const inicial = Math.max(0, piezaDe(products, pieza));
-  return <Store products={products} settings={settings} envios={envios} inicial={inicial} modoPrueba={modoPrueba()} pagos={pagosActivos()} />;
+  const { products, settings: todos, envios } = await getCatalog();
+  // el factor, el margen y la tabla de respaldo de envíos son privados: no viajan al navegador
+  const { envio_cfg, envio_respaldo, ...settings } = todos; // eslint-disable-line no-unused-vars
+  // lo mismo con el peso y las medidas de las cajas
+  const publicos = products.map(({ weight_g, height_cm, width_cm, length_cm, ship_estimado, ...p }) => p); // eslint-disable-line no-unused-vars
+  const inicial = Math.max(0, piezaDe(publicos, pieza));
+  return <Store products={publicos} settings={settings} envios={envios} inicial={inicial} modoPrueba={modoPrueba()} pagos={pagosActivos()} />;
 }

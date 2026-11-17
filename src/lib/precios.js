@@ -47,12 +47,14 @@ export function nombreEnvio(op) {
   if (!op) return "A coordinar";
   if (op.kind === "retiro") return op.name || "Retiro en el taller";
   if (op.kind === "coordinar") return op.name || "Envío a coordinar";
+  if (op.kind === "andreani") return op.name || "Envío por Andreani";
   return `Envío a ${op.name || "tu zona"}`;
 }
 export function detalleEnvio(op) {
   if (!op) return "";
   if (op.kind === "retiro") return [op.address || "Te pasamos la dirección por mensaje", op.hours].filter(Boolean).join(" · ");
   if (op.kind === "coordinar") return "Lo coordinamos por mensaje una vez confirmado el pedido";
+  if (op.kind === "andreani") return "Se calcula con tu código postal";
   return "A domicilio";
 }
 // Copia que se guarda en el pedido (por si después se edita la opción)

@@ -41,6 +41,12 @@ alter table products add column if not exists pedestal text not null default '';
 alter table products add column if not exists sale_price integer;                       -- precio de oferta (vacío = sin oferta)
 alter table products add column if not exists badge text not null default '';          -- '' | nuevo | ultimas
 alter table products add column if not exists production_time text not null default ''; -- vacío = usa el general
+-- Envío: peso YA EMBALADA (gramos) y medidas de la caja (cm). Con esto se cotiza el envío en Zipnova.
+alter table products add column if not exists weight_g integer;
+alter table products add column if not exists height_cm numeric;
+alter table products add column if not exists width_cm numeric;
+alter table products add column if not exists length_cm numeric;
+alter table products add column if not exists ship_estimado boolean not null default false; -- true = valores estimados, falta revisarlos
 
 -- ---------- Pedidos ----------
 create table if not exists orders (
@@ -66,6 +72,11 @@ alter table orders add column if not exists internal_notes text not null default
 -- "seen": los pedidos que ya existían quedan como vistos; los nuevos entran sin ver
 alter table orders add column if not exists seen boolean not null default true;
 alter table orders alter column seen set default false;
+-- Envío por Andreani (cotizado con Zipnova; el envío real lo despacha el dueño a mano)
+alter table orders add column if not exists email text;                    -- mail del comprador (para avisarle el seguimiento)
+alter table orders add column if not exists shipping_detail jsonb;         -- modalidad, destino completo, peso, medidas, transporte y precio de referencia, precio cobrado
+alter table orders add column if not exists tracking_number text;          -- número de seguimiento de Andreani
+alter table orders add column if not exists tracking_sent_at timestamptz;  -- cuándo se le mandó el mail de seguimiento al comprador
 
 -- Número de pedido corto y correlativo (#0001, #0002…)
 do $$ begin
@@ -145,11 +156,15 @@ drop function if exists usar_cupon(text);
 -- Solo la llama el servidor (api/checkout).
 -- (versión anterior, sin p_vence: se borra para que no queden dos funciones)
 drop function if exists crear_pedido(text, text, text, jsonb, integer, integer, text, jsonb, integer, integer);
+-- (versión anterior, sin mail ni detalle de envío)
+drop function if exists crear_pedido(text, text, text, jsonb, integer, integer, text, jsonb, integer, integer, timestamptz);
 create or replace function crear_pedido(
   p_customer_name text, p_contact text, p_note text, p_items jsonb,
   p_subtotal integer, p_discount integer, p_coupon_code text,
   p_shipping jsonb, p_shipping_cost integer, p_total integer,
-  p_vence timestamptz default null
+  p_vence timestamptz default null,
+  p_email text default null,
+  p_shipping_detail jsonb default null
 ) returns jsonb
 language plpgsql security definer set search_path = public as $$
 declare
@@ -174,16 +189,16 @@ begin
   end if;
 
   insert into orders (customer_name, contact, note, items, subtotal, discount, coupon_code,
-                      shipping, shipping_cost, total, status, channel, reserva_vence_at)
+                      shipping, shipping_cost, total, status, channel, reserva_vence_at, email, shipping_detail)
   values (p_customer_name, coalesce(p_contact, ''), coalesce(p_note, ''), p_items, p_subtotal, p_discount,
           case when p_coupon_code is null then null else c.code end,
           p_shipping, p_shipping_cost, p_total, 'pendiente', 'mercadopago',
-          coalesce(p_vence, now() + interval '30 minutes'))
+          coalesce(p_vence, now() + interval '30 minutes'), p_email, p_shipping_detail)
   returning jsonb_build_object('id', orders.id, 'number', orders.number) into r;
   return r;
 end $$;
-revoke execute on function crear_pedido(text, text, text, jsonb, integer, integer, text, jsonb, integer, integer, timestamptz) from public, anon, authenticated;
-grant execute on function crear_pedido(text, text, text, jsonb, integer, integer, text, jsonb, integer, integer, timestamptz) to service_role;
+revoke execute on function crear_pedido(text, text, text, jsonb, integer, integer, text, jsonb, integer, integer, timestamptz, text, jsonb) from public, anon, authenticated;
+grant execute on function crear_pedido(text, text, text, jsonb, integer, integer, text, jsonb, integer, integer, timestamptz, text, jsonb) to service_role;
 
 -- Aplica el estado de un pago de Mercado Pago a su pedido. Idempotente: si llega dos veces el mismo
 -- aviso, no cambia nada ni cuenta el cupón dos veces.
@@ -352,7 +367,7 @@ grant execute on function permitir_intento(text, integer, integer) to service_ro
 -- ---------- Opciones de entrega ----------
 create table if not exists shipping_options (
   id uuid primary key default gen_random_uuid(),
-  kind text not null check (kind in ('retiro', 'coordinar', 'zona')),
+  kind text not null check (kind in ('retiro', 'coordinar', 'zona', 'andreani')),
   name text not null default '',
   price integer not null default 0,   -- solo para 'zona'
   address text not null default '',  -- solo para 'retiro'
@@ -361,6 +376,10 @@ create table if not exists shipping_options (
   sort integer not null default 0,
   created_at timestamptz not null default now()
 );
+
+-- 'andreani' = envío cotizado en vivo con Zipnova (en bases anteriores, se amplía el check)
+alter table shipping_options drop constraint if exists shipping_options_kind_check;
+alter table shipping_options add constraint shipping_options_kind_check check (kind in ('retiro', 'coordinar', 'zona', 'andreani'));
 
 -- ---------- Ajustes y arrepentimientos ----------
 create table if not exists settings (
@@ -419,7 +438,8 @@ drop policy if exists "envios admin" on shipping_options;
 create policy "envios admin" on shipping_options for all using (is_admin()) with check (is_admin());
 
 drop policy if exists "ajustes publicos" on settings;
-create policy "ajustes publicos" on settings for select using (true);
+-- envio_cfg (factor y margen) y envio_respaldo (tabla de respaldo) son PRIVADOS: solo los ve el panel y el servidor
+create policy "ajustes publicos" on settings for select using (key not in ('envio_cfg', 'envio_respaldo') or is_admin());
 drop policy if exists "ajustes admin" on settings;
 create policy "ajustes admin" on settings for all using (is_admin()) with check (is_admin());
 

@@ -144,9 +144,36 @@ Otras cosas que podés hacer:
 5. Para pausarlo, apagá el interruptor. Ahí también ves cuántas veces se usó.
 
 ### Envíos, vacaciones y ajustes
-- **Más → Envíos:** retiro en el taller (con dirección y horario), envío a coordinar o un costo fijo por zona (por ejemplo, CABA $ 4.500). El cliente elige al pagar y el costo se suma solo.
+- **Más → Envíos:** retiro en el taller (con dirección y horario), envío a coordinar, un costo fijo por zona (por ejemplo, CABA $ 4.500) o **Envío por Andreani** (el costo se calcula solo con el código postal; ver más abajo). El cliente elige al pagar y el costo se suma solo.
 - **Más → Ajustes → Modo vacaciones:** pausa las compras y muestra un cartel con la fecha de vuelta. La tienda se sigue viendo.
 - **Más → Ajustes:** textos de la tienda, WhatsApp, tiempo de producción general, datos del negocio (van al pie y al comprobante), **Estado de la tienda** (tildes verdes/rojos: base de datos, Mercado Pago, webhook, URL y mails) y **administradores** (para invitar a alguien más al panel).
+
+### Envío por Andreani (cálculo automático)
+La tienda **cotiza** el envío con Zipnova según el código postal del cliente, pero **no despacha nada**: el envío real lo cargás vos a mano con tu cuenta de Andreani.
+
+**Qué tenés que cargar una vez**
+1. **Más → Piezas →** entrá a cada pieza → «Envío: peso y caja»: peso con la pieza ya embalada (gramos) y medidas de la caja (alto, ancho, largo en cm). Las 10 piezas vienen con valores **estimados** (se marcan «Envío estimado»): pesalas embaladas y corregilos. Si a una pieza le falta, el panel te avisa y esa pieza no se puede cotizar.
+2. **Más → Envíos →** abajo, «Cotización automática»: transporte de referencia, factor, margen, redondeo y envío gratis (opcional). Ahí también está la **tabla de respaldo** (por provincia, a domicilio y a sucursal) que se usa **solo** si Zipnova no responde.
+
+**Cuando entra un pedido con Andreani**
+1. Abrí el pedido: en **«Para despachar con Andreani»** están nombre, mail, teléfono, dirección o sucursal, peso y medidas. Tocá **«Copiar datos para Andreani»** y pegalos en tu cuenta de Andreani.
+2. Cuando Andreani te dé el **número de seguimiento**, pegalo en el pedido y tocá **«Guardar y avisar»**: el pedido pasa a «Enviado» y al comprador le llega un mail con el número y el link de seguimiento.
+3. Más abajo ves **cuánto se le cobró de envío** al comprador, para compararlo con lo que te cobra Andreani.
+
+**Si Zipnova falla o tarda más de 6 segundos:** se usa la tabla de respaldo; si esa provincia está vacía, el cliente ve «Envío a coordinar» y puede pagar igual (pagando solo las piezas).
+
+### Cómo calibrar el factor de envío
+El precio que ve el comprador es: **referencia de Zipnova × factor × (1 + margen %)**, redondeado. Como Zipnova todavía no cotiza con tu cuenta de Andreani, el factor sirve para que el precio quede parecido a lo que **realmente** te cobra Andreani.
+1. Entrá a **Más → Envíos → Simulador**. Elegí una provincia, localidad y código postal (por ejemplo, Rosario 2000) y una pieza.
+2. Tocá **Cotizar**. Vas a ver lo que devuelve Zipnova por transporte y el **precio de referencia**.
+3. En otra pestaña, cotizá **el mismo paquete** (mismo peso, medidas y destino) en el cotizador de tu cuenta de Andreani. Anotá el precio, por ejemplo $ 11.000.
+4. Calculá el factor: **precio de Andreani ÷ precio de referencia**. Ejemplo: Andreani $ 11.000 y referencia $ 13.300 → 11.000 ÷ 13.300 = **0,83**.
+5. Cargá ese factor (con coma o punto), poné el **margen de seguridad en 0**, y tocá **Cotizar** otra vez: el «precio final al comprador» tiene que quedar casi igual al de Andreani. (El simulador usa lo que escribas aunque no hayas guardado.)
+6. Repetí con 3 o 4 destinos distintos (cerca, lejos, una sucursal y un domicilio). Si el factor da muy distinto según el destino, quedate con el **más alto** para no perder plata.
+7. Ahora sí poné el **margen de seguridad** (por ejemplo, 10 %) y tocá **«Guardar ajustes de envío»**.
+8. Revisalo de vez en cuando: en cada pedido se ve **lo cobrado** al comprador. Si Andreani te cobra más seguido de lo que cobraste, subí el factor o el margen. Cuando Andreani esté habilitado en tu cuenta de Zipnova, la tienda lo toma sola como transporte de referencia y el factor debería quedar cerca de 1.
+
+> El factor, el margen y la tabla de respaldo **no se ven en la tienda**: solo en el panel.
 
 ---
 
@@ -173,6 +200,9 @@ Otras cosas que podés hacer:
 | `src/lib/server.js` | Catálogo (cacheado), cotización del carrito en el servidor, variables obligatorias, chequeo de admin |
 | `src/lib/pagos.js` | Firma de los avisos de MP, procesamiento idempotente de pagos y mail al dueño |
 | `src/app/api/cotizar` | Calcula el total en «Pagar» (cupón y envío) |
+| `src/lib/envio.js` · `src/lib/zipnova.js` | Envío por Andreani: precio de referencia, factor y margen (`envio.js`, compartido) y cotización con Zipnova con cache de 30 min y tiempo máximo de 6 s (`zipnova.js`, solo servidor; las claves salen de `process.env`) |
+| `src/app/admin/EnviosAuto.jsx` | Ajustes de la cotización, simulador y tabla de respaldo |
+| `src/app/api/admin/seguimiento` · `envio-simulador` | Guarda el seguimiento de Andreani (y manda el mail al comprador) · simulador del panel |
 | `src/app/api/admin/` | Invitar o quitar administradores, estado de la tienda y mail de prueba (solo admins) |
 | `src/app/api/checkout` | Límite anti-abuso, pedido con reserva de cupón y link de Mercado Pago; todo calculado en el servidor |
 | `src/app/api/mp-webhook` | Recibe los avisos de pago (firma obligatoria, idempotente, registro en `mp_webhooks`) |
@@ -183,6 +213,9 @@ Otras cosas que podés hacer:
 
 ## Pendientes (TODO)
 
+- [ ] **Peso y medidas de las 10 piezas:** son estimados. Pesarlas embaladas y corregirlos en Piezas.
+- [ ] **Calibrar el factor de envío** (ver «Cómo calibrar el factor de envío») y completar la tabla de respaldo por provincia.
+- [ ] Para que el mail de seguimiento llegue a cualquier comprador, el remitente (`MAIL_DESDE`) tiene que usar un dominio verificado en Resend.
 - [ ] **Precios provisorios:** pino, taza clásica, pochoclera, plato hondo y tazón. Corregirlos en el admin.
 - [ ] Confirmar qué colores ofrece en cada pieza (los cargados son estimados a partir de las fotos).
 - [ ] Revisar los textos de producción y envío con el cliente.
