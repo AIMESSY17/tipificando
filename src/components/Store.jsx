@@ -720,7 +720,7 @@ function Pagar({ cart, settings, envios, vacaciones, pagos, onBack, onClose, fla
           <label>Tu WhatsApp o Instagram<input value={contact} onChange={(e) => setContact(e.target.value)} placeholder="ej: 11 5555 5555 o @tuusuario" autoComplete="tel" /></label>
           <label>Tu mail{esAndreani || envio?.kind === "zona" ? "" : " (opcional)"}<input type="email" value={email} onChange={(e) => setEmail(e.target.value)} placeholder="para avisarte cuando salga tu envío" autoComplete="email" inputMode="email" /></label>
 
-          {envios.length > 0 && (
+          {envios.length > 1 && (
             <fieldset className="entrega">
               <legend>¿Cómo lo recibís?</legend>
               {envios.map((op) => (
@@ -735,6 +735,12 @@ function Pagar({ cart, settings, envios, vacaciones, pagos, onBack, onClose, fla
 
           {esAndreani && (
             <div className="envio-and">
+              {envios.length <= 1 && (
+                <div className="envio-head">
+                  <h4>Envío</h4>
+                  <p>Lo calculamos según tu ubicación</p>
+                </div>
+              )}
               <label>Provincia
                 <select value={dest.provincia} onChange={(e) => setD("provincia", e.target.value)} autoComplete="address-level1">
                   <option value="">Elegí tu provincia</option>
@@ -750,8 +756,8 @@ function Pagar({ cart, settings, envios, vacaciones, pagos, onBack, onClose, fla
                 {Object.entries(MODALIDADES).map(([m, titulo]) => {
                   const op = andr?.modalidades?.[m];
                   const detalle = !andr || andr.pendiente ? "Completá provincia, localidad y código postal"
-                    : esperando ? "Calculando…" : andr.coordinar ? "Lo coordinamos después de pagar" : !op ? "No disponible para tu destino" : op.demora || "";
-                  const precio = !andr || andr.pendiente || esperando ? "—" : andr.coordinar ? "A coordinar" : !op ? "—" : op.precio > 0 ? money(op.precio) : "Gratis";
+                    : esperando ? "Calculando tu envío" : andr.coordinar ? "Lo coordinamos después de pagar" : !op ? "No disponible para tu destino" : op.demora || "";
+                  const precio = esperando && andr && !andr.pendiente ? <span className="spin" role="status" aria-label="Calculando" /> : !andr || andr.pendiente || esperando ? "—" : andr.coordinar ? "A coordinar" : !op ? "—" : op.precio > 0 ? money(op.precio) : "Gratis";
                   return (
                     <label key={m} className={"opcion-envio" + (dest.modalidad === m ? " on" : "")}>
                       <input type="radio" name="modalidad" checked={dest.modalidad === m} onChange={() => setD("modalidad", m)} />
@@ -801,7 +807,13 @@ function Pagar({ cart, settings, envios, vacaciones, pagos, onBack, onClose, fla
             <div className="desglose">
               <span>Subtotal</span><span>{money(t.subtotal)}</span>
               {t.discount > 0 && <><span>Cupón</span><span>− {money(t.discount)}</span></>}
-              {t.shipping_cost > 0 && <><span>Envío</span><span>{money(t.shipping_cost)}</span></>}
+              {t.shipping_cost > 0 && !esAndreani && <><span>Envío</span><span>{money(t.shipping_cost)}</span></>}
+            </div>
+          )}
+          {esAndreani && andr && !andr.pendiente && !andr.coordinar && (
+            <div className="envio-linea">
+              <span>Envío</span>
+              {esperando ? <span className="spin" role="status" aria-label="Calculando envío" /> : <b>{t.shipping_cost > 0 ? money(t.shipping_cost) : "Gratis"}</b>}
             </div>
           )}
           <div className="total"><span>Total a pagar</span><b>{money(t.total)}</b></div>

@@ -305,6 +305,15 @@ img { display: block; max-width: 100%; }
 .form select { font: inherit; font-size: 16px; padding: 12px 14px; border-radius: 14px; border: 1px solid rgba(42, 35, 32, 0.18);
   background: #fff; color: var(--tinta); width: 100%; }
 .envio-and { display: grid; }
+.envio-head { margin: 4px 0 12px; padding-top: 14px; border-top: 1px solid rgba(42, 35, 32, 0.12); }
+.envio-head h4 { margin: 0; font-family: var(--f-display, inherit); font-size: 22px; font-weight: 600; letter-spacing: -0.01em; }
+.envio-head p { margin: 2px 0 0; font-size: 13px; color: rgba(42, 35, 32, 0.6); }
+.spin { display: inline-block; width: 14px; height: 14px; border-radius: 50%; border: 2px solid rgba(42, 35, 32, 0.18); border-top-color: var(--tinta);
+  animation: giro 0.7s linear infinite; vertical-align: middle; }
+@keyframes giro { to { transform: rotate(360deg); } }
+@media (prefers-reduced-motion: reduce) { .spin { animation-duration: 2s; } }
+.envio-linea { display: flex; justify-content: space-between; align-items: center; min-height: 28px; font-size: 18px; font-weight: 700; }
+.envio-linea b { font-family: var(--f-mono); font-size: 18px; }
 .dos-col { display: grid; grid-template-columns: 1fr 1fr; gap: 0 10px; }
 .dos-col > label { min-width: 0; }
 .cupon { margin-bottom: 14px; }
