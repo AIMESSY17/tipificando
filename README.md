@@ -7,7 +7,13 @@ Tienda online para **@tipificado_** en formato "Reels de estudio": la pieza acti
 - una palabra gigante en máquina de escribir (Courier Prime bold) pintada en la pared, que se desliza y se funde con el giro;
 - volumen 2.5D con brillo de esmalte.
 
-**Ver todo:** abajo asoma el borde de una hoja de papel saliendo del rodillo de una máquina de escribir, con las miniaturas de todas las piezas en fila (si no entran, «+N») y «catálogo completo · N piezas ↑» tipeado letra por letra; la hoja respira. Al tocarla o arrastrarla hacia arriba sube y cubre la pantalla con la grilla (filtros y tarjetas; al tocar una, la mesa gira hasta ella). Se baja con el gesto o con ✕. En la compu es una hoja centrada de 520 px. El pie (Instagram y botón de arrepentimiento) va en la hoja. El «VER TODO» del header abre la misma hoja.
+**Catálogo completo (la hoja):** abajo asoma el borde de una hoja de papel saliendo del rodillo de una máquina de escribir: «CATÁLOGO COMPLETO ↑» tipeado grande en Courier Prime bold (tinta irregular, con el cursor; se tipea una sola vez por visita) y, debajo, todas las piezas recortadas apoyadas sobre un renglón, del mismo alto y con sombrita de contacto (si no entran, la fila se desliza de costado con inercia). Margen rojo y perforación del papel; la hoja respira. Tocar una pieza de la fila gira la mesa hasta ella; tocar el título o arrastrar hacia arriba sube la hoja, que cubre la pantalla con la grilla (filtros y tarjetas). Se baja con el gesto, ✕ o Escape. En la compu es una hoja centrada de 520 px. Pie a máquina: «@tipificado_» a la izquierda y «Botón de arrepentimiento» a la derecha (cerrada y abierta); abierta, además, los links a las hojas formales.
+
+**Carrito-taza:** el carrito es una taza de café. Al agregar, una miniatura de la pieza vuela en arco hasta la taza y cae adentro; el café sube un escalón por pieza (llena con 5 o más) con una ondita, y baja al vaciar. Con «reducir movimiento» no hay vuelo: solo cambia el nivel.
+
+**Link propio de cada pieza:** `/pieza/<slug>` (por ejemplo `/pieza/palta`) abre la tienda con la mesa ya en esa pieza, sin giro. Al girar la mesa la URL y el título de la pestaña acompañan (sin llenar el historial). Cada pieza tiene título «Nombre — tipificado…|», descripción e imagen para compartir generada al vuelo (`src/app/pieza/[slug]/opengraph-image.jsx`: la pieza recortada sobre el color de su pared y su mesa, el nombre en Courier Prime, el precio y el logo). En la ficha, «Compartir» usa el menú de compartir del celu o, si no hay, copia el link («link copiado…|»). Un slug que no existe vuelve a la home; los links viejos `/?pieza=<slug>` redirigen al nuevo.
+
+**Hojas formales (BORRADOR):** `/preguntas`, `/cambios`, `/envios` y `/terminos` usan la misma hoja de papel, ya abierta, con el título tipeado. Son **textos base para Argentina a revisar con el cliente**: Ley 24.240 (arrepentimiento de 10 días con link al botón, garantía), envíos por correo con seguimiento y plazos estimados, pago con Mercado Pago, datos personales (Ley 25.326). Se editan en `src/data/textos.js` (plazos y contacto arriba de todo); mientras `BORRADOR = true` las hojas muestran el sello «borrador · texto a revisar».
 
 **Ruedita, trackpad y teclado:** un paso cada 350 ms como mucho (lo que llega en el medio se descarta) y siempre frena en una pieza exacta; un flick con el dedo gira hasta 3.
 
@@ -50,15 +56,15 @@ El catálogo **vive en Supabase** y lo carga el cliente desde el panel: el códi
 
 **Palta:** plato con forma de palta (foto recortada del flyer: `public/productos/palta.webp` y su versión de 800). Categoría «plato palta», palabra gigante «PALTA», etiqueta «Nuevo». **Revisar los colores:** por ahora tiene solo «Crema» (el de la foto).
 
-**Si la Palta no aparece en la tienda real:** Supabase → **SQL Editor** → pegá `supabase/agregar-palta.sql` → **Run**. Agrega solo la Palta (primera en la tienda, $ 45.000) y no toca nada más; si ya existe no hace nada. La foto no hay que subirla: está en el repo y la sirve el sitio en `/productos/palta.webp`. Si querés otra foto, cambiala desde el panel (Piezas → Palta → Subir foto).
+**Si la Palta no aparece en la tienda real:** corré `supabase/ronda-precios-palta.sql` (ver abajo): la crea si falta (primera en la tienda, $ 45.000) y si ya existe solo le pone el precio. La foto no hay que subirla: está en el repo y la sirve el sitio en `/productos/palta.webp`. Si querés otra foto, cambiala desde el panel (Piezas → Palta → Subir foto).
 
-### Actualizar los precios en la base (opcional)
+### Actualizar los precios en la base y agregar la Palta
 
-`supabase/actualizar-precios.sql` cambia **solo el precio** de las piezas de la lista (y la categoría de los dos medio tubo), buscándolas por slug. No toca nombres, fotos, colores, descripciones ni ofertas. Si ya cargaste los precios desde el panel, no hace falta.
+`supabase/ronda-precios-palta.sql` (una sola transacción, se puede correr más de una vez) crea la Palta si falta y cambia **solo el precio** de las piezas de la lista (y la categoría de los dos medio tubo), buscándolas por slug (tazas panzonas y tazones también por categoría, para agarrar variantes). No toca nombres, fotos, colores, descripciones, ofertas ni las piezas sin precio en la lista (pino, budinera, pochoclera, taza clásica). Al final muestra nombre, slug y precio de todo.
 
 1. Supabase → **SQL Editor** → New query.
-2. Pegá todo el contenido de `supabase/actualizar-precios.sql` → **Run**.
-3. Revisá con `select slug, name, category, price from products order by sort;` y, si querés que la tienda se actualice al instante, guardá cualquier pieza desde el panel (si no, se renueva sola en ~60 s).
+2. Pegá todo el contenido de `supabase/ronda-precios-palta.sql` → **Run**.
+3. Revisá la tabla que devuelve y, si querés que la tienda se actualice al instante, guardá cualquier pieza desde el panel (si no, se renueva sola en ~60 s).
 
 ---
 
@@ -229,11 +235,15 @@ El precio que ve el comprador es: **referencia de Zipnova × factor × (1 + marg
 | `src/components/Taller.jsx` | **El taller: un solo WebGL (three.js) para todo el escenario.** La protagonista en un pedestal propio (travertino o torno, según el pedestal general) adelante y al centro, con foco cálido de caída suave (`SpotLight` + charco de luz en el piso), sombra marcada sobre el pedestal y luz de recorte; las demás en un anillo detrás, apoyadas en la mesa del set con su sombra de contacto, a ~40% del tamaño (`RATIO_ANILLO`), más oscuras, 40% desaturadas y desenfocadas. La cámara queda quieta, ~20° hacia abajo (`PITCH`). **Salida/entrada ligada al ángulo:** cada pieza tiene un `e` (0 en el anillo, 1 protagonista) que sale de su distancia al frente; va por el piso en arco abriéndose hacia su lado y sube al pedestal en el último tramo (`LAT`, `ARCO`), así a mitad de giro una está volviendo y la otra saliendo, sin flotar ni cruzarse. **Encuadre automático** (`medir`): en el celu la protagonista ocupa ~45-50% del alto útil entre el logo y los textos; en la compu los textos van a la izquierda y la protagonista tiene el centro; la palabra va arriba, entera (la protagonista la roza como mucho abajo) y el anillo no la tapa. Se probó un aro en el piso marcando el anillo (`ARO`): sin aro la protagonista destaca más. Con muchas piezas el radio crece hasta un tope (`RP_MAX`) y el anillo se **virtualiza**: hasta 11 piezas todas tienen su foto en la GPU; con más, solo ±5 alrededor del frente (`NVENT`, `VENT`) y el resto son siluetas tenues (miniatura de 96 px). **Fotos durante el giro:** la 800 de cada pieza queda siempre cargada de respaldo (si una pieza no tiene foto lista, su 800 se sube ya, aunque la mesa gire), la 1600 se cambia recién cuando está en la GPU y nada se libera mientras la mesa gira (al quedar quieta se sueltan las 1600 lejanas). **Sombras:** cada pieza proyecta la de una copia invisible de su silueta que mira al sol (la pieza visible mira a la cámara; de costado dejaba una lonja diagonal en el piso) y solo si está en pantalla. **Celu:** anillo más chico (`RP0_CELU`) y piezas del anillo 15% más grandes (`ESC_CELU`). **Palabra en la compu:** ~80% del ancho (tope 39% del alto), arriba, y puede quedar detrás de la protagonista. Esmalte (nace detrás de la pieza que llega), color del piso, palabra (la actual se va en el sentido del giro y la nueva entra del otro lado) y, al pasar la mitad, tintas y textos: todo sale del ángulo, nada se anima después de soltar. **Push-in** al tocar la protagonista: 450 ms ease-out (`ZOOM_MS`), encuadrada entera en la zona que deja libre la ficha. Tocar una pieza del anillo la trae al pedestal por el camino más corto (`recorrido.tocar`). Luz de ventana y planta, haces de luz y polvo, profundidad de campo barata (mipmaps). **Calidad adaptativa** en 5 escalones (`NIVELES`): si el giro no llega a 60 fps baja primero polvo, haces y desenfoque, después la sombra y recién al final la resolución, que se aplica cuando el dedo suelta; la respuesta al dedo no se toca nunca. 30 fps en reposo y 60 con gesto, pausa con la ficha/carrito abiertos o la pestaña oculta. Escribe `--apoyo`, `--horizonte` y la caja de la protagonista (`--pz-*`) |
 | `src/lib/recorrido.js` | El ángulo del anillo (en piezas): arrastre 1:1, inercia + resorte al soltar (un flick gira hasta 3), `pasoLimitado` para ruedita/trackpad/teclado/flechas (uno cada 350 ms, nunca más de una pieza adelante; lo demás se descarta), tocar con el mismo resorte, todo interrumpible. Sin bucle propio (lo avanza el cuadro de dibujo) |
 | `scripts/bordes.py` | Revisa y arregla los bordes de las fotos (margen transparente, huecos) |
-| `supabase/agregar-palta.sql` | Agrega la Palta a la base, sin tocar nada más |
+| `supabase/ronda-precios-palta.sql` | Precios de la lista oficial + crea la Palta si falta (idempotente) |
+| `src/components/Hoja.jsx` | La hoja de papel compartida: tipeo letra por letra, tinta irregular (`TipeoTinta`), el pie (`PieHoja`) y la hoja de texto de las páginas formales (`HojaTexto`) |
+| `src/data/textos.js` | Textos de las hojas formales (borrador, editables) |
+| `src/components/Tienda.jsx` | Carga de la tienda en el servidor, compartida por `/` y `/pieza/[slug]` |
+| `src/app/pieza/[slug]/` | Link propio de cada pieza y su imagen para compartir |
 | `src/lib/palabra.js` | Mide la palabra gigante con el mismo HTML/CSS de siempre y la pinta letra por letra en una textura para la pared |
 | `src/lib/color.js` | OKLab/OKLCH en JS (los mismos `vivo()` y `color-mix` del CSS) para pasarle los colores ya calculados al shader |
 | `src/components/Escena.jsx` | Elige el taller 3D o, si no hay WebGL, un respaldo DOM simple (pared, mesa, palabra, pedestal CSS y una pieza por vez) que se maneja con el mismo recorrido |
-| `src/components/Store.jsx` | Tienda: el gesto en vivo (dedo 1:1 con inercia; ruedita, trackpad, teclado y flechas de a un paso cada 350 ms), ficha, carrito, pagar, la hoja de la máquina de escribir (Ver todo, `HojaMaquina`), pieza que vuela a la tacita |
+| `src/components/Store.jsx` | Tienda: el gesto en vivo (dedo 1:1 con inercia; ruedita, trackpad, teclado y flechas de a un paso cada 350 ms), ficha, carrito, pagar, la hoja de la máquina de escribir (catálogo completo, `HojaMaquina`), la miniatura que vuela en arco a la taza-carrito, URL por pieza y compartir |
 | `src/components/Effects.jsx` | Loader («tipificado...» escribiéndose) |
 | `src/lib/profundidad.js` + `profundidad.worker.js` | Decodifica cada foto y calcula su mapa de profundidad en un Web Worker (una vez por imagen) |
 | `src/lib/fotos.js` | Fotos en dos tamaños: elige la de 800 en celular y la deriva de `image_url` |
@@ -266,10 +276,12 @@ El precio que ve el comprador es: **referencia de Zipnova × factor × (1 + marg
 - [ ] **Peso y medidas de las 10 piezas:** son estimados. Pesarlas embaladas y corregirlos en Piezas.
 - [ ] **Calibrar el factor de envío** (ver «Cómo calibrar el factor de envío») y completar la tabla de respaldo por provincia.
 - [ ] Para que el mail de seguimiento llegue a cualquier comprador, el remitente (`MAIL_DESDE`) tiene que usar un dominio verificado en Resend.
-- [ ] **Precios provisorios:** pino, taza clásica, pochoclera, plato hondo y tazón. Corregirlos en el admin.
-- [ ] Correr `supabase/agregar-palta.sql` en Supabase si la Palta no está en la base.
+- [ ] **Precios provisorios:** pino (hoy en $ 1 de prueba en la base), budinera, pochoclera y taza clásica no están en la lista. Corregirlos en el admin.
+- [ ] Correr `supabase/ronda-precios-palta.sql` en Supabase.
+- [ ] Compotera ($ 25.000): cargarla desde el panel cuando haya pieza y foto.
 - [ ] Confirmar qué colores ofrece en cada pieza (los cargados son estimados a partir de las fotos).
 - [ ] Revisar los textos de producción y envío con el cliente.
+- [ ] **Hojas formales (borrador):** revisar con el cliente `src/data/textos.js` (preguntas, cambios, envíos, términos y privacidad: plazos, correo, contacto) y, cuando estén aprobadas, poner `BORRADOR = false`.
 - [ ] Probar una compra real chica con Mercado Pago de producción (y devolverla para ver que el cupón se libera).
 - [ ] Revisar la parte legal con alguien que sepa (botón de arrepentimiento, datos fiscales/QR de ARCA, términos y condiciones).
 - [ ] Dominio propio (tipificado.com.ar en NIC.ar) → conectarlo en Vercel → actualizar `NEXT_PUBLIC_SITE_URL`, las URL de Supabase, el webhook de MP y el remitente de los mails.

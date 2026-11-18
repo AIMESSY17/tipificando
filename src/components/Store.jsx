@@ -3,6 +3,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { EscenaAuto } from "./Escena";
 import { Loader } from "./Effects";
 import { Logo } from "./Logo";
+import { Tipeo, TipeoTinta, PieHoja } from "./Hoja";
 import { money, isLight, orderText, vivo } from "@/lib/format";
 import { precioDe, enOferta, primerColorLibre, nombreEnvio, detalleEnvio, costoEnvio, copiaEnvio, normalizarCodigo } from "@/lib/precios";
 import { PROVINCIAS, MODALIDADES, normalizarCp } from "@/lib/envio";
@@ -29,17 +30,78 @@ function useReducedMotion() {
   return r;
 }
 
+// El carrito es una taza de café de perfil sobre dos rueditas: la manija de la taza sigue hacia
+// arriba y hace de manija del carro. Las piezas se cuentan adentro, sobre el café: sube un escalón
+// por pieza (llena con 5 o más) con una ondita cada vez que cambia. Trazo redondo, en currentColor.
+const CUERPO_TAZA = "M11 9h17v8a7 7 0 0 1-7 7h-3a7 7 0 0 1-7-7z";
+const ESCALONES = 5;
+const nivelCafe = (n) => (n > 0 ? 3 + (Math.min(n, ESCALONES) / ESCALONES) * 11.5 : 0); // el interior mide 15
 function Tacita({ count }) {
+  const nivel = nivelCafe(count);
+  const prev = useRef(count);
+  const [ola, setOla] = useState(0);
+  useEffect(() => {
+    if (prev.current !== count) setOla((o) => o + 1);
+    prev.current = count;
+  }, [count]);
   return (
-    <span className="tacita">
-      <svg viewBox="0 0 32 32" aria-hidden>
-        <path d="M5 11h17v8a7 7 0 0 1-7 7h-3a7 7 0 0 1-7-7z" fill="none" stroke="currentColor" strokeWidth="2" strokeLinejoin="round" />
-        <path d="M22 13h2.5a3.5 3.5 0 0 1 0 7H22" fill="none" stroke="currentColor" strokeWidth="2" />
-        <path d="M10 4c0 2 2 2 2 4M15 4c0 2 2 2 2 4" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" />
+    <span className={"tacita" + (count > 0 ? " llena" : "") + (count >= ESCALONES ? " colmada" : "")}>
+      <svg viewBox="0 0 40 32" aria-hidden>
+        <defs>
+          <clipPath id="tacita-interior"><path d={CUERPO_TAZA} /></clipPath>
+        </defs>
+        <g clipPath="url(#tacita-interior)">
+          {/* el café: una superficie con onda que sube y baja (transición de CSS) */}
+          <g className="tacita-cafe" style={{ transform: `translateY(${24 - nivel}px)` }}>
+            <path key={ola} className={ola ? "tacita-ola" : ""} d="M-4 0.6q2.5-1.2 5 0t5 0t5 0t5 0t5 0t5 0t5 0t5 0V18H-4z" />
+          </g>
+        </g>
+        <g fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+          <path d={CUERPO_TAZA} />
+          {/* manija de la taza que sube y se vuelve la manija del carro */}
+          <path d="M11 11.5H8a3.5 3.5 0 0 0 0 7h3M8 11.5L5.5 5H2.5" />
+          <circle cx="15" cy="28" r="2" />
+          <circle cx="24" cy="28" r="2" />
+          <path d="M18 2.5c0 1.6 1.6 1.6 1.6 3.2M22.5 2.5c0 1.6 1.6 1.6 1.6 3.2" strokeWidth="1.6" />
+        </g>
       </svg>
       <b>{count}</b>
     </span>
   );
+}
+
+// La miniatura vuela en arco (bezier cuadrática) hasta la boca de la taza y cae adentro.
+function vueloATaza(src, desde, taza) {
+  const a = desde.getBoundingClientRect(), t = taza.getBoundingClientRect();
+  const s = Math.max(44, Math.min(96, a.width * 0.5, a.height * 0.5)); // tamaño de la miniatura
+  const x0 = a.left + a.width / 2, y0 = a.top + a.height / 2;
+  const bx = t.left + t.width * (19.5 / 40), by = t.top + t.height * (9 / 32); // boca de la taza
+  // control del arco: hacia el costado de la salida y apenas arriba de la taza (nunca fuera de pantalla),
+  // así sube, se curva y entra a la taza desde arriba
+  const cx = x0 - (bx - x0) * 0.3, cy = Math.max(14, Math.min(y0, by) - 50);
+  const g = Object.assign(document.createElement("img"), { src, alt: "", decoding: "async" });
+  Object.assign(g.style, {
+    position: "fixed", left: x0 - s / 2 + "px", top: y0 - s / 2 + "px", width: s + "px", height: s + "px", objectFit: "contain",
+    zIndex: 999, pointerEvents: "none", filter: "drop-shadow(0 6px 8px rgba(0,0,0,.28))", willChange: "transform",
+  });
+  document.body.appendChild(g);
+  const fin = 12 / s; // llega del ancho de la boca
+  const kf = [];
+  const PASOS = 18;
+  for (let i = 0; i <= PASOS; i++) {
+    const u = i / PASOS;
+    const k = 1 - (1 - u) * (1 - u); // arranca rápido y frena arriba de la taza
+    const x = (1 - k) * (1 - k) * x0 + 2 * (1 - k) * k * cx + k * k * bx;
+    const y = (1 - k) * (1 - k) * y0 + 2 * (1 - k) * k * cy + k * k * (by - 12);
+    const esc = 1 + (fin * 1.8 - 1) * k;
+    kf.push({ transform: `translate(${x - x0}px, ${y - y0}px) scale(${esc}) rotate(${-22 * k}deg)`, opacity: 1, offset: u * 0.78 });
+  }
+  // la caída: entra por la boca y desaparece adentro
+  kf.push({ transform: `translate(${bx - x0}px, ${by + 5 - y0}px) scale(${fin}) rotate(-28deg)`, opacity: 0, offset: 1 });
+  return new Promise((ok) => {
+    const an = g.animate(kf, { duration: 840, easing: "linear", fill: "forwards" });
+    an.onfinish = an.oncancel = () => { g.remove(); ok(); };
+  });
 }
 
 export default function Store({ products, settings, envios = [], inicial = 0, modoPrueba = false, pagos = true }) {
@@ -60,6 +122,7 @@ export default function Store({ products, settings, envios = [], inicial = 0, mo
   const [cart, setCart] = useState([]);
   const [toast, setToast] = useState(null);
   const [sin3d, setSin3d] = useState(false);
+  const [enVuelo, setEnVuelo] = useState(0); // piezas volando a la taza (el café sube cuando caen)
   const cartBtn = useRef(null);
   const drag = useRef(null);
   const rueda = useRef({ x: 0, t: 0 });
@@ -92,6 +155,21 @@ export default function Store({ products, settings, envios = [], inicial = 0, mo
       return true;
     });
   }), [rec, N]);
+
+  // Cada pieza tiene su link (/pieza/<slug>): al girar la mesa, la URL y el título acompañan
+  // (replaceState: no llena el historial). La primera vez no se toca: se respeta la URL de entrada.
+  const primeraUrl = useRef(true);
+  useEffect(() => {
+    if (primeraUrl.current) return void (primeraUrl.current = false);
+    const x = products[active];
+    if (!x?.slug || String(x.id).includes("-demo")) return;
+    const q = new URLSearchParams(window.location.search);
+    q.delete("pieza");
+    const qs = q.toString();
+    const url = `/pieza/${encodeURIComponent(x.slug)}${qs ? "?" + qs : ""}`;
+    if (window.location.pathname + window.location.search !== url) window.history.replaceState(window.history.state, "", url);
+    document.title = `${x.name} — tipificado…|`;
+  }, [active, products]);
 
   // Carrito guardado en el navegador
   useEffect(() => {
@@ -229,33 +307,19 @@ export default function Store({ products, settings, envios = [], inicial = 0, mo
       const foto = prod.colors?.find((x) => x.name === color)?.image_url || prod.image_url;
       return [...c, { key, id: prod.id, name: prod.name, color, price: precioDe(prod), image: foto, qty }];
     });
-    // La pieza vuela a la tacita (desde la foto de la ficha o, si no hay, desde la pieza del taller)
+    // Una miniatura vuela en arco hasta la taza y cae adentro; el café sube cuando cae.
+    // Con movimiento reducido: sin vuelo, solo cambia el nivel.
     const desde = imgEl || document.querySelector(".pieza-activa");
-    if (desde && cartBtn.current && !reduced) {
-      const a = desde.getBoundingClientRect();
-      const b = cartBtn.current.getBoundingClientRect();
-      const ghost = imgEl ? imgEl.cloneNode() : Object.assign(document.createElement("img"), { src: prod.image_url, alt: "" });
-      Object.assign(ghost.style, {
-        position: "fixed", left: a.left + "px", top: a.top + "px", width: a.width + "px", height: a.height + "px",
-        objectFit: "contain", objectPosition: "50% 100%", zIndex: 999, pointerEvents: "none",
-      });
-      document.body.appendChild(ghost);
-      const dx = b.left + b.width / 2 - (a.left + a.width / 2);
-      const dy = b.top + b.height / 2 - (a.top + a.height / 2);
-      ghost.animate(
-        [
-          { transform: "translate(0,0) scale(1) rotate(0)", opacity: 1 },
-          { transform: `translate(${dx * 0.6}px, ${dy * 0.3 - 80}px) scale(.45) rotate(-14deg)`, opacity: 1, offset: 0.55 },
-          { transform: `translate(${dx}px, ${dy}px) scale(.06) rotate(-30deg)`, opacity: 0.6 },
-        ],
-        { duration: 780, easing: "cubic-bezier(.5,0,.3,1)" }
-      ).onfinish = () => {
-        ghost.remove();
+    const taza = cartBtn.current?.querySelector(".tacita");
+    if (desde && taza && !reduced && typeof document.body.animate === "function") {
+      setEnVuelo((v) => v + qty);
+      vueloATaza(fotoChica(prod.image_url), desde, taza).then(() => {
+        setEnVuelo((v) => Math.max(0, v - qty));
         cartBtn.current?.animate(
-          [{ transform: "rotate(0)" }, { transform: "rotate(-16deg) scale(1.15)" }, { transform: "rotate(10deg)" }, { transform: "rotate(0)" }],
-          { duration: 420 }
+          [{ transform: "none" }, { transform: "translateY(2px) rotate(-6deg)" }, { transform: "translateY(-1px) rotate(4deg)" }, { transform: "none" }],
+          { duration: 420, easing: "ease-out" }
         );
-      };
+      });
     }
     cerrarFicha();
     flash(`Agregado: ${prod.name} · ${color}`);
@@ -297,9 +361,8 @@ export default function Store({ products, settings, envios = [], inicial = 0, mo
           <Logo />
         </a>
         <div className="top-acciones">
-          <button className="chip-btn" onClick={() => setPanel("todo")}>Ver todo <span className="chip-num">{N}</span></button>
-          <button className="carrito-btn" ref={cartBtn} onClick={() => setPanel("carrito")} aria-label={`Carrito, ${count} piezas`}>
-            <Tacita count={count} />
+          <button className="carrito-btn" ref={cartBtn} onClick={() => setPanel("carrito")} aria-label={count === 1 ? "Carrito, 1 pieza" : `Carrito, ${count} piezas`}>
+            <Tacita count={Math.max(0, count - enVuelo)} />
           </button>
         </div>
       </header>
@@ -336,7 +399,7 @@ export default function Store({ products, settings, envios = [], inicial = 0, mo
         {!visto && <p className="pista"><span className="pista-izq">←</span> deslizá <span className="pista-der">→</span></p>}
       </section>
 
-      {/* con más de una pieza, el pie (Instagram y botón de arrepentimiento) va en la hoja de la máquina de escribir */}
+      {/* con más de una pieza, el pie (Instagram a la izquierda, botón de arrepentimiento a la derecha) va en la hoja */}
       {N > 1 ? (
         <HojaMaquina
           products={products}
@@ -347,14 +410,14 @@ export default function Store({ products, settings, envios = [], inicial = 0, mo
           onAbrir={() => setPanel("todo")}
           onCerrar={() => setPanel((x) => (x === "todo" ? null : x))}
           onPick={(i) => { setPanel(null); rec.irAIndice(i, N); }}
-          pie={<Pie settings={settings} />}
+          settings={settings}
         />
       ) : (
-        <footer className="pie"><Pie settings={settings} /></footer>
+        <footer className="pie"><PieHoja settings={settings} /></footer>
       )}
 
       {sheet !== null && (
-        <Ficha prod={products[sheet]} settings={settings} vacaciones={vacaciones} con3d={!sin3d} cerrando={cerrando} onClose={cerrarFicha} onAdd={add} />
+        <Ficha prod={products[sheet]} settings={settings} flash={flash} vacaciones={vacaciones} con3d={!sin3d} cerrando={cerrando} onClose={cerrarFicha} onAdd={add} />
       )}
       {panel === "carrito" && (
         <Carrito cart={cart} setCart={setCart} vacaciones={vacaciones} onClose={() => setPanel(null)} onPay={() => setPanel("pagar")} />
@@ -371,7 +434,22 @@ export default function Store({ products, settings, envios = [], inicial = 0, mo
 // ---------- Ficha del producto ----------
 // Con el taller en 3D la cámara se acerca a la pieza y la ficha entra desde abajo (celu) o desde el costado
 // (compu): la foto de arriba solo aparece si el color elegido tiene foto propia.
-function Ficha({ prod, settings, vacaciones, con3d, cerrando, onClose, onAdd }) {
+// Compartir el link de la pieza: Web Share API (celu) o, si no hay, se copia el link.
+async function compartir(prod, flash) {
+  const url = `${window.location.origin}/pieza/${encodeURIComponent(prod.slug)}`;
+  const datos = { title: `${prod.name} — tipificado…|`, text: `${prod.name} · cerámica hecha a mano`, url };
+  if (navigator.share && (!navigator.canShare || navigator.canShare(datos))) {
+    try { return void (await navigator.share(datos)); } catch (e) { if (e?.name === "AbortError") return; }
+  }
+  try {
+    await navigator.clipboard.writeText(url);
+    flash("link copiado…|");
+  } catch {
+    flash("No se pudo copiar: " + url);
+  }
+}
+
+function Ficha({ prod, settings, flash, vacaciones, con3d, cerrando, onClose, onAdd }) {
   const libre = primerColorLibre(prod);
   const [color, setColor] = useState(libre?.name || prod.colors?.[0]?.name || "Único");
   const [qty, setQty] = useState(1);
@@ -393,7 +471,15 @@ function Ficha({ prod, settings, vacaciones, con3d, cerrando, onClose, onAdd }) 
           </div>
         )}
         <div className="ficha-cuerpo">
-          <p className="categoria mano">{prod.category}{prod.badge && <span className="etiqueta">{prod.badge === "ultimas" ? "Últimas" : "Nuevo"}</span>}</p>
+          <div className="ficha-arriba">
+            <p className="categoria mano">{prod.category}{prod.badge && <span className="etiqueta">{prod.badge === "ultimas" ? "Últimas" : "Nuevo"}</span>}</p>
+            {prod.slug && (
+              <button className="btn-compartir" onClick={() => compartir(prod, flash)} aria-label={`Compartir ${prod.name}`}>
+                <svg viewBox="0 0 20 20" aria-hidden><path d="M10 12.5V3M6.5 6.5 10 3l3.5 3.5M5 9.5H4v7.5h12V9.5h-1" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" /></svg>
+                Compartir
+              </button>
+            )}
+          </div>
           <h3>{prod.name}<span className="cursor-barra" aria-hidden /></h3>
           <p className="desc">{prod.description}</p>
           <p className="ficha-precio">
@@ -723,85 +809,32 @@ function Pagar({ cart, settings, envios, vacaciones, pagos, onBack, onClose, fla
   );
 }
 
-// ---------- Pie (Instagram, arrepentimiento y datos del negocio) ----------
-function Pie({ settings }) {
-  return (
-    <>
-      <a href={`https://instagram.com/${settings.instagram}`} target="_blank" rel="noreferrer">@{settings.instagram}</a>
-      <span>·</span>
-      <a href="/arrepentimiento">Botón de arrepentimiento</a>
-      {(settings.negocio_nombre || settings.negocio_cuit || settings.negocio_direccion) && (
-        <small className="pie-legal">{[settings.negocio_nombre, settings.negocio_cuit && "CUIT " + settings.negocio_cuit, settings.negocio_direccion].filter(Boolean).join(" · ")}</small>
-      )}
-    </>
-  );
-}
-
-// Texto que se tipea letra por letra (lo que falta ocupa su lugar invisible: el renglón no salta)
-function Tipeo({ texto, ms = 22, demora = 0, activo = true, reducido, cursor = false }) {
-  const [n, setN] = useState(reducido || !activo ? texto.length : 0);
-  useEffect(() => {
-    if (reducido || !activo) return setN(texto.length);
-    setN(0);
-    let i = 0, t = 0;
-    const paso = () => {
-      i++;
-      setN(i);
-      if (i < texto.length) t = setTimeout(paso, ms);
-    };
-    t = setTimeout(paso, demora);
-    return () => clearTimeout(t);
-  }, [texto, ms, demora, activo, reducido]);
-  return (
-    <>
-      {texto.slice(0, n)}
-      {cursor && <span className="cursor-barra" />}
-      <span className="tipeo-resto" aria-hidden>{texto.slice(n)}</span>
-    </>
-  );
-}
-
-// ---------- Ver todo: la hoja de la máquina de escribir ----------
-// Abajo de la pantalla asoma el borde de una hoja de papel saliendo del rodillo, con las miniaturas
-// de TODAS las piezas en fila y «catálogo completo · N piezas ↑» tipeado. La hoja respira (sube
-// 4 px y baja cada ~4 s). Al tocarla o arrastrarla hacia arriba sube y cubre la pantalla, con la
-// grilla de siempre (filtros, tarjetas; al tocar una pieza la mesa gira hasta ella). Se cierra
-// bajándola (gesto desde la cabecera) o con ✕ / Escape.
+// ---------- Catálogo completo: la hoja de la máquina de escribir ----------
+// Abajo asoma el borde de una hoja de papel saliendo del rodillo: «CATÁLOGO COMPLETO ↑» tipeado
+// grande (una vez por visita) y, debajo, todas las piezas recortadas apoyadas sobre un renglón (si no
+// entran, la fila se desliza de costado con inercia). Tocar una pieza gira la mesa hasta ella; tocar el
+// título (o el papel) o arrastrar hacia arriba sube la hoja, que cubre la pantalla con la grilla de
+// siempre (filtros, tarjetas). Se baja con el gesto desde la cabecera, ✕ o Escape. La hoja respira.
 const etiquetaDe = (b) => (b === "ultimas" ? "Últimas" : b ? "Nuevo" : "");
 const catDe = (c = "") => c.split(/[/·]/)[0].trim();
-const MINI = 30, MINI_GAP = 6;
-function HojaMaquina({ products, actual, abierta, visible, reducido, onAbrir, onCerrar, onPick, pie }) {
-  const N = products.length;
+const TIPEO_KEY = "tipificado-tipeo-catalogo";
+function HojaMaquina({ products, actual, abierta, visible, reducido, onAbrir, onCerrar, onPick, settings }) {
   const cats = ["todo", ...new Set(products.map((p) => catDe(p.category)).filter(Boolean))];
   const [cat, setCat] = useState("todo");
   const [dy, setDy] = useState(0); // arrastre en curso (px; negativo = hacia arriba)
   const [montada, setMontada] = useState(abierta); // la grilla se arma al abrir y se desarma al terminar de bajar
-  const [cabe, setCabe] = useState(N);
   const tira = useRef(null);
   const gesto = useRef(null);
+  const suprimir = useRef(false); // después de un arrastre, el click que sigue no cuenta
+  const inercia = useRef(0);
   const raiz = useRef(null);
   const list = products.map((p, i) => ({ p, i })).filter(({ p }) => cat === "todo" || catDe(p.category) === cat);
-  const texto = `catálogo completo · ${N} piezas`;
 
   useEffect(() => {
     if (abierta) return setMontada(true);
     const t = setTimeout(() => setMontada(false), reducido ? 0 : 560);
     return () => clearTimeout(t);
   }, [abierta, reducido]);
-
-  // cuántas miniaturas entran en la fila (si no entran todas: las que entren + «+N»)
-  useEffect(() => {
-    const el = tira.current;
-    if (!el) return;
-    const medir = () => {
-      const n = Math.floor((el.clientWidth + MINI_GAP) / (MINI + MINI_GAP));
-      setCabe(n >= N ? N : Math.max(1, n - 1));
-    };
-    medir();
-    const ro = new ResizeObserver(medir);
-    ro.observe(el);
-    return () => ro.disconnect();
-  }, [N]);
 
   const cerrarRef = useRef(onCerrar);
   cerrarRef.current = onCerrar;
@@ -813,30 +846,77 @@ function HojaMaquina({ products, actual, abierta, visible, reducido, onAbrir, on
     return () => window.removeEventListener("keydown", k);
   }, [abierta]);
 
-  // Gesto: cerrada, toda la hoja se toca o se arrastra hacia arriba; abierta, se baja desde la cabecera.
+  // la pieza de adelante queda a la vista en la fila (si la fila se desliza)
+  useEffect(() => {
+    const el = tira.current;
+    const b = el?.children[actual];
+    if (!el || !b || abierta || gesto.current || el.scrollWidth <= el.clientWidth + 1) return;
+    const l = b.offsetLeft, r = l + b.offsetWidth;
+    if (l < el.scrollLeft + 16 || r > el.scrollLeft + el.clientWidth - 16)
+      el.scrollTo({ left: l - (el.clientWidth - b.offsetWidth) / 2, behavior: reducido ? "auto" : "smooth" });
+  }, [actual, abierta, reducido]);
+
+  // Gesto. Cerrada: arrastrar hacia arriba abre; en la fila, de costado se desliza la fila (con el dedo
+  // la desliza el navegador; con el mouse, a mano y con inercia). Abierta: se baja desde la cabecera.
   const down = (e) => {
     if (e.button > 0) return;
     if (abierta ? !e.target.closest(".hoja-tirador, .todo-head") || e.target.closest("button") : e.target.closest("a")) return;
-    gesto.current = { y: e.clientY, t: e.timeStamp, id: e.pointerId, mov: false };
-    try { e.currentTarget.setPointerCapture(e.pointerId); } catch {}
+    cancelAnimationFrame(inercia.current);
+    const enTira = !abierta && !!e.target.closest(".hoja-tira");
+    gesto.current = { x: e.clientX, y: e.clientY, t: e.timeStamp, id: e.pointerId, eje: null, enTira, mouse: e.pointerType === "mouse", s0: tira.current?.scrollLeft || 0, m: [] };
+    // sin captura todavía: un toque tiene que llegar como click al título o a la pieza; se captura al arrastrar
   };
   const move = (e) => {
     const g = gesto.current;
     if (!g || g.id !== e.pointerId) return;
-    const d = e.clientY - g.y;
-    if (!g.mov && Math.abs(d) < 6) return;
-    g.mov = true;
+    const dx = e.clientX - g.x, d = e.clientY - g.y;
+    if (!g.eje) {
+      if (Math.max(Math.abs(dx), Math.abs(d)) < 6) return;
+      g.eje = g.enTira && Math.abs(dx) > Math.abs(d) ? "x" : "y";
+      if (g.eje === "x" && !g.mouse) return void (gesto.current = null); // el dedo: la fila la desliza el navegador
+      try { e.currentTarget.setPointerCapture(e.pointerId); } catch {}
+    }
+    if (g.eje === "x") {
+      tira.current.scrollLeft = g.s0 - dx;
+      g.m.push({ x: e.clientX, t: e.timeStamp });
+      if (g.m.length > 5) g.m.shift();
+      return;
+    }
     setDy(abierta ? Math.max(0, d) : Math.min(0, d));
   };
   const up = (e, cancelado) => {
     const g = gesto.current;
     if (!g || g.id !== e.pointerId) return;
     gesto.current = null;
+    if (!g.eje) return; // un toque: lo resuelve el click
+    suprimir.current = true;
+    setTimeout(() => (suprimir.current = false), 0);
+    if (g.eje === "x") {
+      // inercia del mouse: la velocidad del final del arrastre, frenando
+      const a = g.m[0], b = g.m[g.m.length - 1];
+      let v = a && b && b.t > a.t ? -(b.x - a.x) / (b.t - a.t) * 16 : 0; // px por cuadro
+      const el = tira.current;
+      const paso = () => {
+        if (!el || Math.abs(v) < 0.4) return;
+        el.scrollLeft += v;
+        v *= 0.93;
+        inercia.current = requestAnimationFrame(paso);
+      };
+      if (!reducido) paso();
+      return;
+    }
     const d = e.clientY - g.y, v = d / Math.max(1, e.timeStamp - g.t); // px/ms
     setDy(0);
     if (cancelado) return;
-    if (!abierta && (!g.mov || d < -36 || v < -0.4)) onAbrir();
-    else if (abierta && g.mov && (d > 90 || v > 0.5)) onCerrar();
+    if (!abierta && (d < -36 || v < -0.4)) onAbrir();
+    else if (abierta && (d > 90 || v > 0.5)) onCerrar();
+  };
+  // ruedita sobre la fila: la desliza (y no gira la mesa)
+  const rueda = (e) => {
+    const el = tira.current;
+    if (!el || el.scrollWidth <= el.clientWidth + 1) return;
+    e.stopPropagation();
+    el.scrollLeft += Math.abs(e.deltaX) > Math.abs(e.deltaY) ? e.deltaX : e.deltaY;
   };
 
   return (
@@ -848,29 +928,35 @@ function HojaMaquina({ products, actual, abierta, visible, reducido, onAbrir, on
       onPointerMove={move}
       onPointerUp={(e) => up(e, false)}
       onPointerCancel={(e) => up(e, true)}
+      onClickCapture={(e) => { if (suprimir.current) { e.stopPropagation(); e.preventDefault(); } }}
       role={abierta ? "dialog" : undefined}
       aria-modal={abierta || undefined}
       aria-label={abierta ? "Todas las piezas" : undefined}
     >
       <div className="hoja-papel">
-        <div
-          className="hoja-asoma"
-          role="button"
-          tabIndex={abierta ? -1 : 0}
-          aria-label={`Ver el catálogo completo: ${N} piezas`}
-          aria-hidden={abierta || undefined}
-          onKeyDown={(e) => (e.key === "Enter" || e.key === " ") && (e.preventDefault(), onAbrir())}
-        >
-          <div className="hoja-tira" ref={tira} aria-hidden>
-            {visible && products.slice(0, cabe).map((x, k) => (
-              <img key={x.id} src={fotoChica(x.image_url)} alt="" decoding="async" style={{ "--k": k }} />
-            ))}
-            {visible && cabe < N && <span className="hoja-mas">+{N - cabe}</span>}
+        <div className="hoja-asoma" aria-hidden={abierta || undefined} onClick={(e) => !abierta && !e.target.closest("a, .tira-pieza") && onAbrir()}>
+          <button className="hoja-titulo" tabIndex={abierta ? -1 : 0} aria-label="Ver el catálogo completo">
+            {visible ? <TipeoTinta texto="CATÁLOGO COMPLETO ↑" ms={62} demora={650} reducido={reducido} clave={TIPEO_KEY} />
+              : <span className="tipeo-resto">CATÁLOGO COMPLETO ↑</span>}
+          </button>
+          <div className="hoja-renglon">
+            <div className="hoja-tira" ref={tira} onWheel={rueda}>
+              {products.map((x, k) => (
+                <button
+                  key={x.id}
+                  className={"tira-pieza" + (k === actual ? " actual" : "")}
+                  style={{ "--k": k }}
+                  tabIndex={abierta ? -1 : 0}
+                  aria-label={x.name}
+                  aria-current={k === actual || undefined}
+                  onClick={() => onPick(k)}
+                >
+                  {visible && <img src={fotoChica(x.image_url)} alt="" decoding="async" draggable={false} />}
+                </button>
+              ))}
+            </div>
           </div>
-          <p className="hoja-tipeo" aria-hidden>
-            {visible ? <Tipeo texto={texto + " ↑"} ms={45} demora={700} reducido={reducido} cursor /> : <span className="tipeo-resto">{texto} ↑</span>}
-          </p>
-          <div className="maquina-pie">{pie}</div>
+          <div className="maquina-pie"><PieHoja settings={settings} legal={false} /></div>
         </div>
 
         <div className="hoja-contenido" aria-hidden={!abierta || undefined}>
@@ -922,7 +1008,7 @@ function HojaMaquina({ products, actual, abierta, visible, reducido, onAbrir, on
               ))}
             </div>
           )}
-          {montada && <footer className="hoja-pie-abierta">{pie}</footer>}
+          {montada && <footer className="hoja-pie-abierta"><PieHoja settings={settings} formales /></footer>}
         </div>
       </div>
       <div className="rodillo" aria-hidden />
