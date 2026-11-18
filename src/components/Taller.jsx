@@ -419,7 +419,7 @@ void main(){
   vec3 parNow = mezcla(uParA, uParB, uParAL, uParBL, m);
   col = mix(col, mix(col, parNow, 0.45), 0.4 * hz * hz);
   col *= 1.0 - 0.09 * hz * hz;
-  float canto = 1.0 - smoothstep(0.5, 3.0, Z / max(fwidth(Z), 1e-5));
+  float canto = 1.0 - smoothstep(0.0, 4.0, Z / max(fwidth(Z), 1e-3));
   col = mix(col, vec3(1.0), 0.12 * canto);
   vec4 gr = texture2D(uGrano, vec2(X, Z) * 0.42);
   col = mix(col, gr.rgb, gr.a);
@@ -918,7 +918,7 @@ export default function Taller(props) {
           if (!vivo) return;
           const viejo = palabras.get(i);
           if (viejo?.clave === clave && viejo.tex) return;
-          const { canvas: c, m } = pintarPalabra(pz.palabra, resPalabra(pz), tactil ? 2048 : 4096);
+          const { canvas: c, m, k } = pintarPalabra(pz.palabra, resPalabra(pz), tactil ? 2048 : 4096);
           const tex = new T.CanvasTexture(c);
           tex.format = T.RedFormat;
           tex.colorSpace = T.NoColorSpace;
@@ -929,7 +929,7 @@ export default function Taller(props) {
           tex.wrapS = tex.wrapT = T.ClampToEdgeWrapping;
           renderer.initTexture(tex);
           viejo?.tex?.dispose();
-          palabras.set(i, { clave, tex, m });
+          palabras.set(i, { clave, tex, m, k });
           st.version++;
           pedirCuadro();
         };
@@ -1695,10 +1695,12 @@ export default function Taller(props) {
         const pal = [[iA, -sg * t * L, Math.max(0, 1 - t / 0.56), t * 2.2], [iB, sg * (1 - t) * L, Math.max(0, (t - 0.44) / 0.56), (1 - t) * 2.2]];
         for (let j = 0; j < 2; j++) {
           const [i, dx, op, bl] = pal[j];
-          const tex = op > 0 ? palabraDe(i, true)?.tex : null;
+          const ent = op > 0 ? palabraDe(i, true) : null;
+          const tex = ent?.tex || null;
           const R = tex ? rectPalabra(i) : null;
+          const kp = ent?.k || [1, 1];
           uSet["uPal" + j].value = R ? tex : negro;
-          if (R) uSet.uPalR.value[j].set(R.cx, R.cy, R.hw, R.hh);
+          if (R) uSet.uPalR.value[j].set(R.cx, R.cy, R.hw * kp[0], R.hh * kp[1]);
           else uSet.uPalR.value[j].set(0, 0, 0, 0);
           uSet.uPalM.value[j].set(dx, R ? op : 0, cal.dof ? bl * (1 - z) : 0, 0);
         }

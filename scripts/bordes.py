@@ -3,6 +3,9 @@ Revisa y arregla los bordes de las fotos de public/productos (las de 1600).
 
     python scripts/bordes.py                 # solo revisa: qué piezas tocan el borde o no tienen margen
     python scripts/bordes.py --arreglar      # recorta al contorno, deja margen transparente y rellena huecos
+    python scripts/bordes.py --arreglar --origen carpeta   # lo mismo, leyendo las fotos de otra carpeta
+                                             # (siempre partir de las menos procesadas: recomprimir
+                                             # una foto ya comprimida le saca nitidez)
     npm run tamanos                          # después: regenera las de 800
 
 Por qué: en la escena la pieza se dibuja con parallax y el shader repite el último píxel del borde
@@ -21,7 +24,8 @@ import numpy as np
 from PIL import Image, ImageDraw
 
 CARPETA = pathlib.Path("public/productos")
-LADO = 1600
+LADO = 1800   # tope del lado mayor (con el margen ya pasa de 1600: no se reescala hacia abajo)
+CALIDAD = 96  # WebP casi sin pérdida (el alfa va siempre sin pérdida)
 M_LADO, M_ARRIBA, M_ABAJO = 0.04, 0.04, 0.012
 SIN_RELLENO = {"taza-clasica", "taza-panzona", "tazon", "pino-navidad"}  # asas / ramas: huecos reales
 
@@ -85,15 +89,17 @@ def arreglar(f):
     k = LADO / max(out.size)
     if k < 1:
         out = out.resize((round(out.width * k), round(out.height * k)), Image.LANCZOS)
-    out.save(f, "WEBP", quality=90, alpha_quality=100, method=6, exact=True)
+    out.save(CARPETA / f.name, "WEBP", quality=CALIDAD, alpha_quality=100, method=6, exact=True)
     print("arreglada", f.name, out.size)
 
 
 if __name__ == "__main__":
-    fotos = sorted(CARPETA.glob("*.webp"))
+    origen = pathlib.Path(sys.argv[sys.argv.index("--origen") + 1]) if "--origen" in sys.argv else CARPETA
+    fotos = sorted(origen.glob("*.webp"))
     if "--arreglar" in sys.argv:
         for f in fotos:
             arreglar(f)
         print()
+        fotos = sorted(CARPETA.glob("*.webp"))
     malas = [f.name for f in fotos if revisar(f)]
     sys.exit(1 if malas and "--arreglar" not in sys.argv else 0)

@@ -86,7 +86,7 @@ export function TipeoTinta({ texto, ms = 55, demora = 0, activo = true, reducido
 
 // Pie: @instagram a la izquierda y botón de arrepentimiento a la derecha, en un renglón.
 // `formales`: arriba, los links a las hojas formales (solo en la hoja abierta y en las hojas de texto).
-export function PieHoja({ settings = {}, formales = false, legal = true }) {
+export function PieHoja({ settings = {}, formales = false, legal = true, lados = true }) {
   const ig = settings.instagram || "tipificado_";
   const negocio = [settings.negocio_nombre, settings.negocio_cuit && "CUIT " + settings.negocio_cuit, settings.negocio_direccion].filter(Boolean).join(" · ");
   return (
@@ -101,11 +101,24 @@ export function PieHoja({ settings = {}, formales = false, legal = true }) {
           ))}
         </nav>
       )}
-      <div className="pie-linea">
-        <a href={`https://instagram.com/${ig}`} target="_blank" rel="noreferrer">@{ig}</a>
-        <a href="/arrepentimiento">Botón de arrepentimiento</a>
-      </div>
+      {lados && (
+        <div className="pie-linea">
+          <a href={`https://instagram.com/${ig}`} target="_blank" rel="noreferrer">@{ig}</a>
+          <a href="/arrepentimiento">Botón de arrepentimiento</a>
+        </div>
+      )}
       {legal && negocio && <small className="pie-legal">{negocio}</small>}
+    </>
+  );
+}
+
+// Pie de la página principal: @instagram abajo a la izquierda y el botón de arrepentimiento abajo a la derecha
+export function PieLados({ settings = {} }) {
+  const ig = settings.instagram || "tipificado_";
+  return (
+    <>
+      <a className="pie-izq" href={`https://instagram.com/${ig}`} target="_blank" rel="noreferrer" draggable={false}>@{ig}</a>
+      <a className="pie-der" href="/arrepentimiento" draggable={false}>Botón de arrepentimiento</a>
     </>
   );
 }

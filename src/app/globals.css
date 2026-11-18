@@ -22,6 +22,14 @@ body { font-family: var(--f-sans); color: var(--tinta); -webkit-font-smoothing: 
 button { font: inherit; color: inherit; background: none; border: 0; cursor: pointer; }
 a { color: inherit; }
 img { display: block; max-width: 100%; }
+/* táctil: sin el recuadro azul del navegador ni el menú de mantener apretado; el foco solo se ve con teclado */
+* { -webkit-tap-highlight-color: transparent; }
+button, a, img, canvas, summary, label, [role="button"], [role="tab"] { -webkit-touch-callout: none; -webkit-user-select: none; user-select: none; }
+button, a, [role="button"], [role="tab"], summary, label { touch-action: manipulation; }
+img { -webkit-user-drag: none; }
+input, textarea, select { -webkit-user-select: text; user-select: text; -webkit-touch-callout: default; }
+:focus:not(:focus-visible) { outline: none; }
+.btn-oscuro:active:not(:disabled), .btn-azul:active:not(:disabled), .btn-linea:active, .btn-gris:active, .carrito-btn:active, .cerrar:active, .chip:active { transform: scale(0.97); }
 
 /* --pared y --mesa (y las tintas) cambian al pasar la mitad del gesto: las usan botones y textos */
 .tienda { position: fixed; inset: 0; overflow: hidden; touch-action: none; user-select: none; -webkit-user-select: none; background: var(--pared); }
@@ -105,21 +113,12 @@ img { display: block; max-width: 100%; }
   .carrito-btn { -webkit-backdrop-filter: blur(12px) saturate(1.4); backdrop-filter: blur(12px) saturate(1.4);
     background: color-mix(in oklch, var(--pared) 45%, transparent); }
 }
-.carrito-btn { padding: 5px 10px 4px; color: var(--ink-p); }
-/* la taza-carrito: el número va adentro de la taza, sobre el café */
-.tacita { position: relative; display: block; width: 40px; height: 32px; }
-.tacita svg { display: block; width: 100%; height: 100%; overflow: visible; }
-/* el café: sube un escalón por pieza (llena a 5+) y baja al vaciar; cada cambio, una ondita */
-.tacita-cafe { fill: currentColor; opacity: 0.85; transition: transform 0.55s cubic-bezier(0.3, 1.5, 0.5, 1); }
-.tacita-ola { animation: ola 0.9s ease-out both; transform-box: view-box; }
-@keyframes ola {
-  0% { transform: translate(-5px, 0) scaleY(2.6); }
-  35% { transform: translate(-2.5px, 0) scaleY(1.8); }
-  100% { transform: translate(0, 0) scaleY(1); }
-}
-.tacita b { position: absolute; left: 27.5%; width: 42.5%; top: 34%; height: 40%; display: grid; place-items: center;
-  font-family: var(--f-mono); font-size: 10.5px; font-weight: 700; line-height: 1; letter-spacing: -0.02em; color: currentColor; opacity: 0.7; }
-.tacita.llena b { color: var(--pared); opacity: 1; }
+.carrito-btn { padding: 6px 10px; color: var(--ink-p); }
+/* la tacita del carrito con el número al lado */
+.tacita { display: flex; align-items: center; gap: 4px; }
+.tacita svg { width: 22px; height: 22px; }
+.tacita b { font-family: var(--f-mono); font-size: 12px; font-weight: 600; min-width: 18px; height: 18px; border-radius: 99px; display: grid; place-items: center;
+  background: var(--ink-p); color: var(--pared); }
 .tagline { position: absolute; top: calc(62px + env(safe-area-inset-top)); left: 0; right: 0; z-index: 20; font-family: var(--f-mono); font-size: 10.5px;
   letter-spacing: 0.14em; text-transform: uppercase; text-align: center; color: var(--ink-p-soft); padding: 0 40px; transition: color 0.15s; line-height: 1.6; }
 /* celu: sin bajada (el aviso de vacaciones sí se muestra) */
@@ -167,8 +166,13 @@ img { display: block; max-width: 100%; }
 .pista .pista-der { animation-name: pistaDer; }
 @keyframes pistaIzq { 50% { transform: translateX(-5px); } }
 @keyframes pistaDer { 50% { transform: translateX(5px); } }
-.pie { position: absolute; left: 0; right: 0; bottom: 0; z-index: 20; display: flex; flex-direction: column; font-family: var(--f-display); font-size: 11px; letter-spacing: 0.02em;
-  color: var(--ink-m-soft); padding: 0 16px calc(10px + env(safe-area-inset-bottom)); }
+/* pie de la página: @tipificado_ abajo a la izquierda y «Botón de arrepentimiento» abajo a la derecha, chicos y a máquina */
+.pie { position: absolute; left: 0; right: 0; bottom: 0; z-index: 41; height: 0; font-family: var(--f-display); font-size: 11px; letter-spacing: 0.02em; line-height: 13px; }
+.pie a { position: absolute; bottom: calc(8px + env(safe-area-inset-bottom)); padding: 4px 0; color: var(--ink-m); opacity: 0.8; text-decoration: none; white-space: nowrap;
+  text-shadow: 0 1px 0 color-mix(in oklch, var(--mesa) 60%, transparent); -webkit-touch-callout: none; touch-action: manipulation; transition: color 0.15s, opacity 0.2s; }
+.pie a:hover { opacity: 1; text-decoration: underline; text-underline-offset: 2px; }
+.pie-izq { left: 14px; }
+.pie-der { right: 14px; }
 
 @media (min-width: 900px) {
   .nav-flecha { display: block; }
@@ -189,8 +193,7 @@ img { display: block; max-width: 100%; }
   .pista { display: none; }
 }
 @media (prefers-reduced-motion: reduce) {
-  .ped-giro, .cursor, .marca-cursor, .cursor-barra, .calidez.on, .info-anim, .pista span, .tacita-ola { animation: none !important; }
-  .tacita-cafe { transition: none; }
+  .ped-giro, .cursor, .marca-cursor, .cursor-barra, .calidez.on, .info-anim, .pista span { animation: none !important; }
 }
 
 /* ---------- Capas: ficha, carrito, pagar ---------- */
@@ -284,17 +287,27 @@ img { display: block; max-width: 100%; }
   border: 1px dashed rgba(42, 35, 32, 0.25); border-radius: 14px; padding: 12px; }
 .error { color: #a12a1f; font-size: 15px; }
 
-/* ---------- Ver todo: la hoja de la máquina de escribir ----------
-   Cerrada asoma abajo el borde de la hoja (--asoma), saliendo del rodillo; abierta cubre la pantalla.
-   --dy = arrastre en curso. En la compu es una hoja centrada de 520 px que al abrir se ensancha. */
-.hoja-maquina { --asoma: calc(105px + env(safe-area-inset-bottom)); position: absolute; left: 0; right: 0; bottom: 0; height: 100dvh; z-index: 40;
-  transform: translate3d(0, calc(100% - var(--asoma) + var(--dy, 0px)), 0); opacity: 0; pointer-events: none;
-  filter: drop-shadow(0 -3px 7px rgba(30, 16, 8, 0.2)) drop-shadow(0 -14px 22px rgba(30, 16, 8, 0.14));
-  transition: transform 0.56s cubic-bezier(0.2, 0.85, 0.25, 1), opacity 0.5s ease 0.35s, width 0.56s cubic-bezier(0.2, 0.85, 0.25, 1), margin 0.56s cubic-bezier(0.2, 0.85, 0.25, 1); }
-.hoja-maquina.visible { opacity: 1; pointer-events: auto; }
-.hoja-maquina.abierta { z-index: 90; transform: translate3d(0, var(--dy, 0px), 0); filter: none; transition-delay: 0s; }
+/* ---------- Catálogo completo ----------
+   Cerrado: solo el texto grande «CATÁLOGO COMPLETO ↑» sobre el piso. Abierto: una hoja que sube y cubre la
+   pantalla con la grilla (--dy = arrastre hacia abajo en curso). En la compu es una hoja centrada. */
+.catalogo-btn { position: absolute; left: 50%; bottom: calc(24px + env(safe-area-inset-bottom)); z-index: 40; transform: translateX(-50%);
+  min-width: min(100%, 360px); min-height: 60px; padding: 8px 14px 6px; display: grid; place-items: center; white-space: nowrap;
+  color: var(--ink-m); touch-action: manipulation; cursor: pointer; opacity: 0; pointer-events: none; border-radius: 14px;
+  transition: opacity 0.5s ease 0.35s, transform 0.18s ease-out, color 0.15s; }
+.catalogo-btn.visible { opacity: 1; pointer-events: auto; }
+.catalogo-txt { font-family: var(--f-display); font-weight: 700; font-size: clamp(22px, 7.4vw, 40px); line-height: 1.05; letter-spacing: 0.015em;
+  text-shadow: 0 1px 0 color-mix(in oklch, var(--mesa) 70%, transparent); }
+.catalogo-txt .cursor-barra { margin-left: 0.04em; width: 0.07em; }
+.catalogo-btn:active, .catalogo-btn[data-presionado] { transform: translateX(-50%) scale(0.97); }
+.catalogo-btn:focus-visible { outline: 2px solid var(--ink-m); outline-offset: 2px; }
+@media (hover: hover) { .catalogo-btn:hover .catalogo-txt { text-decoration: underline; text-decoration-thickness: 2px; text-underline-offset: 6px; } }
+
+.hoja-maquina { position: absolute; left: 0; right: 0; bottom: 0; height: 100dvh; z-index: 90; visibility: hidden; pointer-events: none;
+  transform: translate3d(0, 100%, 0);
+  transition: transform 0.56s cubic-bezier(0.2, 0.85, 0.25, 1), visibility 0s 0.56s, width 0.56s cubic-bezier(0.2, 0.85, 0.25, 1), margin 0.56s cubic-bezier(0.2, 0.85, 0.25, 1); }
+.hoja-maquina.abierta { visibility: visible; pointer-events: auto; transform: translate3d(0, var(--dy, 0px), 0); transition-delay: 0s; filter: none; }
 .hoja-maquina.arrastrando { transition: none; }
-.con-ficha .hoja-maquina { opacity: 0; pointer-events: none; transition-delay: 0s; }
+.con-ficha .hoja-maquina { visibility: hidden; pointer-events: none; transition-delay: 0s; }
 /* el papel: textura sutil (fibras + grano) y borde de arriba apenas irregular */
 .hoja-papel { position: absolute; inset: 0; color: var(--tinta); overflow: hidden;
   background:
@@ -302,62 +315,18 @@ img { display: block; max-width: 100%; }
     repeating-linear-gradient(93deg, rgba(120, 95, 60, 0.025) 0 1px, transparent 1px 7px),
     linear-gradient(to bottom, #f6f0e2, var(--papel) 140px);
   clip-path: polygon(0 3px, 3% 1.2px, 7% 2.4px, 11% 0.6px, 16% 2px, 21% 1px, 26% 2.6px, 31% 0.8px, 37% 1.8px, 42% 0.4px, 48% 2.2px, 53% 1.1px, 58% 2.8px, 63% 0.7px,
-    69% 1.9px, 74% 0.5px, 79% 2.3px, 84% 1.2px, 89% 2.7px, 94% 0.9px, 97% 2px, 100% 1px, 100% 100%, 0 100%);
-  animation: respira 4s ease-in-out infinite; }
-.hoja-maquina.abierta .hoja-papel, .hoja-maquina.arrastrando .hoja-papel { animation: none; }
-@keyframes respira { 50% { transform: translateY(-4px); } }
-/* el rodillo de la máquina: la hoja sale de abajo de él */
-.rodillo { position: absolute; left: -3%; right: -3%; top: calc(var(--asoma) - 11px); height: 13px; border-radius: 7px; pointer-events: none;
-  background: linear-gradient(to bottom, #4a403a, #1d1714 45%, #2c2420 70%, #0f0c0a); box-shadow: 0 -2px 6px rgba(0, 0, 0, 0.25), inset 0 1px 0 rgba(255, 255, 255, 0.18);
-  transition: opacity 0.25s; }
-.hoja-maquina.abierta .rodillo, .hoja-maquina.arrastrando .rodillo { opacity: 0; }
-
-/* lo que asoma: «CATÁLOGO COMPLETO ↑» tipeado, la fila de piezas sobre su renglón y el pie */
-.hoja-asoma { position: absolute; left: 0; right: 0; top: 0; height: calc(var(--asoma) - 11px); padding: 6px 0 0; display: flex; flex-direction: column; align-items: center;
-  cursor: pointer; touch-action: none; transition: opacity 0.2s; }
-.hoja-maquina.abierta .hoja-asoma { opacity: 0; pointer-events: none; }
-/* el margen del papel: una línea roja tenue y la perforación del costado */
-.hoja-asoma::before { content: ""; position: absolute; left: 22px; top: 0; bottom: 0; width: 1px; background: rgba(190, 70, 60, 0.2); pointer-events: none; }
-.hoja-asoma::after { content: ""; position: absolute; left: 7px; top: 8px; bottom: 0; width: 7px; pointer-events: none;
-  background: radial-gradient(circle at 3.5px 3.5px, rgba(60, 40, 25, 0.16) 0 2.2px, rgba(255, 255, 255, 0.5) 2.6px, transparent 3.2px) 0 0 / 7px 19px repeat-y; }
-.hoja-titulo { position: relative; z-index: 1; font-family: var(--f-display); font-weight: 700; font-size: clamp(20px, 5.9vw, 30px); line-height: 1.05; letter-spacing: 0.015em;
-  white-space: nowrap; color: #2a221d; padding: 0 6px; border-radius: 6px; }
-.hoja-titulo:focus-visible, .tira-pieza:focus-visible { outline: 2px solid var(--tinta); outline-offset: 2px; }
-.hoja-titulo .cursor-barra { margin-left: 0.04em; width: 0.07em; }
+    69% 1.9px, 74% 0.5px, 79% 2.3px, 84% 1.2px, 89% 2.7px, 94% 0.9px, 97% 2px, 100% 1px, 100% 100%, 0 100%);; }
 /* tinta de máquina: cada letra con su opacidad y alguna apenas corrida (Hoja.jsx → TipeoTinta) */
 .tinta { display: inline-block; }
 .tinta-palabra { display: inline-block; white-space: nowrap; }
 .tipeo-resto { visibility: hidden; }
-/* el renglón: las piezas recortadas apoyadas sobre una línea fina, del mismo alto */
-.hoja-renglon { position: relative; width: 100%; margin-top: 1px; }
-.hoja-renglon::after { content: ""; position: absolute; left: 30px; right: 14px; bottom: 6px; height: 1px; background: rgba(42, 35, 32, 0.22); pointer-events: none; }
-.hoja-tira { display: flex; align-items: flex-end; gap: 12px; height: 44px; padding: 0 22px 0 32px; overflow-x: auto; overflow-y: hidden; touch-action: pan-x;
-  overscroll-behavior-x: contain; scrollbar-width: none; -webkit-overflow-scrolling: touch;
-  -webkit-mask: linear-gradient(to right, transparent 22px, #000 34px, #000 calc(100% - 22px), transparent); mask: linear-gradient(to right, transparent 22px, #000 34px, #000 calc(100% - 22px), transparent); }
-.hoja-tira::-webkit-scrollbar { display: none; }
-/* si entran todas, quedan centradas; si no, la fila arranca en el margen y se desliza */
-.hoja-tira > :first-child { margin-left: auto; }
-.hoja-tira > :last-child { margin-right: auto; }
-.tira-pieza { position: relative; flex: none; height: 40px; padding: 0 1px 6px; display: flex; align-items: flex-end; border-radius: 6px; }
-.tira-pieza img { height: 34px; width: auto; max-width: 60px; object-fit: contain; object-position: 50% 100%; pointer-events: none; -webkit-user-drag: none;
-  animation: miniEntra 0.35s cubic-bezier(0.2, 0.8, 0.2, 1) both; animation-delay: calc(min(var(--k), 14) * 40ms + 0.35s); transition: transform 0.25s cubic-bezier(0.2, 0.8, 0.2, 1); }
-/* sombrita de contacto sobre el renglón */
-.tira-pieza::after { content: ""; position: absolute; left: 12%; right: 12%; bottom: 4.5px; height: 4px; border-radius: 50%; pointer-events: none;
-  background: radial-gradient(closest-side, rgba(40, 22, 10, 0.42), transparent); transition: transform 0.25s, opacity 0.25s; }
-.tira-pieza.actual img { transform: translateY(-3px); }
-.tira-pieza.actual::after { transform: scaleX(0.82); opacity: 0.7; }
-.tira-pieza.actual::before { content: ""; position: absolute; left: 50%; bottom: 0; width: 4px; height: 4px; margin-left: -2px; border-radius: 50%; background: rgba(42, 35, 32, 0.55); }
-@media (hover: hover) { .tira-pieza:hover img { transform: translateY(-3px); } }
-@keyframes miniEntra { from { opacity: 0; transform: translateY(6px); } }
-/* el pie: @instagram a la izquierda y el botón de arrepentimiento a la derecha, a máquina */
-.maquina-pie { width: 100%; margin-top: auto; padding: 0 16px 3px 32px; font-family: var(--f-display); font-size: 11px; letter-spacing: 0.02em; color: rgba(42, 35, 32, 0.62); }
 .pie-linea { display: flex; justify-content: space-between; align-items: baseline; gap: 12px; white-space: nowrap; line-height: 13px; }
 .pie-linea a, .pie-formales a { text-decoration: none; }
 .pie-linea a:hover, .pie-formales a:hover { text-decoration: underline; text-underline-offset: 2px; }
 .hoja-pie-abierta { flex: none; display: grid; gap: 8px; padding: 12px 18px calc(10px + env(safe-area-inset-bottom)); font-family: var(--f-display); font-size: 12px;
   color: rgba(42, 35, 32, 0.66); border-top: 1px dashed rgba(42, 35, 32, 0.18); width: 100%; max-width: 1240px; margin: 0 auto; }
 .pie-formales { display: flex; flex-wrap: wrap; justify-content: center; gap: 4px 8px; font-size: 12.5px; color: rgba(42, 35, 32, 0.8); }
-.hoja-pie-abierta .pie-legal, .pie .pie-legal { text-align: center; font-size: 9.5px; }
+.hoja-pie-abierta .pie-legal { text-align: center; font-size: 9.5px; }
 
 /* abierta: la grilla de siempre, sobre el papel */
 .hoja-contenido { position: absolute; inset: 0; display: flex; flex-direction: column; opacity: 0; visibility: hidden; transition: opacity 0.22s, visibility 0s 0.22s; }
@@ -366,16 +335,11 @@ img { display: block; max-width: 100%; }
 .hoja-tirador span { width: 46px; height: 4px; border-radius: 99px; background: rgba(42, 35, 32, 0.22); }
 .hoja-contenido .todo-head { padding-top: 2px; touch-action: none; }
 @media (min-width: 900px) {
-  .hoja-maquina { left: 50%; right: auto; width: 520px; margin-left: -260px; height: calc(100dvh - 28px); }
-  .hoja-maquina.abierta { width: min(1240px, calc(100vw - 56px)); margin-left: calc(min(1240px, calc(100vw - 56px)) / -2); }
-  .hoja-maquina { --asoma: calc(122px + env(safe-area-inset-bottom)); }
-  .hoja-tira { height: 56px; }
-  .tira-pieza { height: 50px; }
-  .tira-pieza img { height: 44px; max-width: 72px; }
+  .hoja-maquina { left: 50%; right: auto; width: min(1240px, calc(100vw - 56px)); margin-left: calc(min(1240px, calc(100vw - 56px)) / -2); height: calc(100dvh - 28px); }
 }
 @media (prefers-reduced-motion: reduce) {
-  .hoja-maquina, .hoja-contenido, .hoja-asoma { transition-duration: 0s !important; }
-  .hoja-papel, .tira-pieza img, .hoja-formal .hoja-papel { animation: none !important; }
+  .hoja-maquina, .hoja-contenido, .catalogo-btn { transition-duration: 0s !important; }
+  .hoja-papel, .hoja-formal .hoja-papel { animation: none !important; }
 }
 /* cabecera, filtros y grilla de Ver todo (dentro de la hoja) */
 .todo-head { display: flex; justify-content: space-between; align-items: flex-end; gap: 12px; padding: calc(18px + env(safe-area-inset-top)) 18px 10px;
@@ -407,7 +371,8 @@ img { display: block; max-width: 100%; }
   filter: drop-shadow(0 8px 10px rgba(0, 0, 0, 0.22)); transition: transform 0.35s cubic-bezier(0.2, 0.8, 0.2, 1); }
 .card:hover .card-foto, .card:focus-visible .card-foto { transform: translateY(-3px); box-shadow: 0 1px 0 rgba(255, 255, 255, 0.5) inset, 0 18px 34px -12px rgba(40, 20, 10, 0.45); }
 .card:hover .card-foto img { transform: scale(1.04); }
-.card:active .card-foto { transform: scale(0.98); }
+.card { touch-action: pan-y; transition: transform 0.12s ease-out; }
+.card:active, .card[data-presionado] { transform: scale(0.97); }
 .card.actual .card-foto { outline: 2px solid var(--tinta); outline-offset: 3px; }
 .card-etiqueta { position: absolute; z-index: 2; top: 10px; left: 10px; padding: 4px 9px 3px; border-radius: 99px; font-size: 11px; font-weight: 600;
   letter-spacing: 0.1em; text-transform: uppercase; background: var(--tinta); color: var(--crema); }

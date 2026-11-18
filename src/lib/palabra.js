@@ -74,9 +74,13 @@ export function medirPalabra(palabra) {
 export function pintarPalabra(palabra, fuentePx, maxAncho = 4096) {
   const m = medirPalabra(palabra);
   const F = Math.max(32, Math.min(fuentePx, maxAncho / Math.max(m.w, 0.1)));
+  // Margen negro alrededor (≥ 8 px y ~12% de la letra): los bordes de la textura nunca tocan una
+  // letra, así ni el clamp ni los mipmaps (que mezclan con el borde) dibujan una línea recta.
+  const iw = Math.max(4, Math.ceil(m.w * F)), ih = Math.max(4, Math.ceil(m.h * F));
+  const pad = Math.max(8, Math.ceil(F * 0.12));
   const c = document.createElement("canvas");
-  c.width = Math.max(4, Math.ceil(m.w * F));
-  c.height = Math.max(4, Math.ceil(m.h * F));
+  c.width = iw + 2 * pad;
+  c.height = ih + 2 * pad;
   const x = c.getContext("2d");
   x.fillStyle = "#000";
   x.fillRect(0, 0, c.width, c.height);
@@ -84,10 +88,13 @@ export function pintarPalabra(palabra, fuentePx, maxAncho = 4096) {
   x.textBaseline = "alphabetic";
   x.textAlign = "left";
   x.font = `700 ${F}px ${FUENTE}`;
-  const sx = c.width / (m.w * F), sy = c.height / (m.h * F);
+  x.translate(pad, pad);
+  const sx = iw / (m.w * F), sy = ih / (m.h * F);
   x.scale(sx, sy);
   for (const l of m.letras) x.fillText(l.t.toLocaleLowerCase("es"), l.x * F, m.base * F);
-  return { canvas: c, m };
+  // k: cuánto más grande es el rectángulo de la textura que el de la palabra
+  return { canvas: c, m, k: [c.width / iw, c.height / ih] };
+
 }
 
 // Tamaño de la letra en px de pantalla: que entre entera en el 94% del ancho (cada letra de la

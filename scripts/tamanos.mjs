@@ -14,7 +14,7 @@ const fotos = (await readdir(raiz)).filter((f) => f.endsWith(".webp"));
 for (const f of fotos) {
   const info = await sharp(path.join(raiz, f))
     .resize({ width: 800, height: 800, fit: "inside", withoutEnlargement: true })
-    .webp({ quality: 84, alphaQuality: 90, effort: 5 })
+    .webp({ quality: 92, alphaQuality: 100, effort: 5 })
     .toFile(path.join(destino, f));
   console.log(`${f} → 800/${f} (${info.width}×${info.height}, ${Math.round(info.size / 1024)} KB)`);
 }
