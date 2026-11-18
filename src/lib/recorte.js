@@ -158,12 +158,16 @@ export function encuadrar(canvas) {
       if (d[(y * W + x) * 4 + 3] > 12) { if (x < x0) x0 = x; if (x > x1) x1 = x; if (y < y0) y0 = y; if (y > y1) y1 = y; }
   if (x1 < 0) throw new Error("No encontramos ninguna pieza en la foto. Probá con otra foto donde se vea bien.");
   const cw = x1 - x0 + 1, ch = y1 - y0 + 1;
-  const k = Math.min(1, 900 / Math.max(cw, ch));
+  // margen transparente (como scripts/bordes.py): 4% a los costados y arriba, 1,2% abajo. Sin
+  // margen, el parallax de la escena estira el píxel del borde y la pieza se ve mochada.
+  const lado = Math.max(cw, ch);
+  const ml = Math.round(lado * 0.04), mt = ml, mb = Math.round(lado * 0.012);
+  const k = Math.min(1, 900 / Math.max(cw + 2 * ml, ch + mt + mb));
   const o = document.createElement("canvas");
-  o.width = Math.round(cw * k);
-  o.height = Math.round(ch * k);
+  o.width = Math.round((cw + 2 * ml) * k);
+  o.height = Math.round((ch + mt + mb) * k);
   const ox = o.getContext("2d");
   ox.imageSmoothingQuality = "high";
-  ox.drawImage(canvas, x0, y0, cw, ch, 0, 0, o.width, o.height);
+  ox.drawImage(canvas, x0, y0, cw, ch, ml * k, mt * k, cw * k, ch * k);
   return o;
 }

@@ -92,4 +92,12 @@ export function pintarPalabra(palabra, fuentePx, maxAncho = 4096) {
 
 // Tamaño de la letra en px de pantalla: que entre entera en el 94% del ancho (cada letra de la
 // máquina de escribir mide ~0.56 em con el espaciado), máx. 30% del alto y 340 px
-export const tamPalabra = (palabra, W, H) => Math.min((0.94 * W) / (Math.max([...palabra].length, 4) * 0.56 + 0.3), 0.3 * H, 340);
+// En la compu (≥ 900 px) se mide la palabra real y se lleva a ~80% del ancho (las cortas como
+// «pino» ya no quedan chicas), con un tope de 39% del alto (más alto ya baja del horizonte).
+export const tamPalabra = (palabra, W, H) => {
+  if (W >= 900) {
+    const m = memoMedidas.get(palabra) || (typeof document !== "undefined" ? medirPalabra(palabra) : null);
+    if (m?.w > 0) return Math.min((0.8 * W) / m.w, (0.39 * H) / Math.max(m.h, 0.5));
+  }
+  return Math.min((0.94 * W) / (Math.max([...palabra].length, 4) * 0.56 + 0.3), 0.3 * H, 340);
+};

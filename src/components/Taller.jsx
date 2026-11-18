@@ -45,20 +45,22 @@ const PITCH_ZOOM = (9 * Math.PI) / 180; // y un poco menos cuando se acerca a la
 const ALTO = 1.1;        // alto de la geometría del pedestal
 const PED_ALTO = 0.34, PED_RADIO = 0.58; // pedestal en unidades de la protagonista
 const RP0 = 5, RP_MAX = 8; // radio del anillo (holgado: la protagonista se lee bien más grande; crece con la cantidad hasta un tope)
-const ANCHO_MAX = 1.5;   // ancho máximo de una pieza del anillo (ver tamPieza)
+const RP0_CELU = 4.4, ESC_CELU = 1.15; // celu: anillo más cerca y piezas del anillo 15% más grandes
+const ANCHO_MAX = 1.62;  // ancho máximo de una pieza del anillo (ver tamPieza)
 const SEP = 1.3;         // distancia entre centros vecinos ≥ 1.3 × la pieza más ancha
 const GAP_PED = 1.6;     // el pedestal está esto delante del anillo
 const GAP_PARED = 2.6;   // del anillo a la pared (cerca: deja lugar arriba para la palabra)
 const NIEBLA = 0.18;     // perspectiva atmosférica máxima (las del fondo, hacia el color de la pared)
 const LAT = 0.85;        // cuánto se abre hacia el costado la trayectoria de salida/entrada
 const ARCO = 0.1;        // y un saltito al subir al pedestal
-const PIEZA_B = 1.3;     // "superficie" de cada pieza (misma área visual sin importar la forma)
+const PIEZA_B = 1.4;     // "superficie" de cada pieza (misma área visual sin importar la forma; las fotos traen ~4% de margen transparente)
 const ALTO_REF = 1.45; // alto de una pieza "típica" para encuadrar
 const NVENT = 11, VENT = 5; // hasta 11 piezas: todas con foto; si hay más, solo ±5 alrededor del frente
 const ARO = false;       // aro fino en el piso marcando el anillo (probado: sin aro la protagonista destaca más)
 const ZOOM_MS = 450;     // push-in al tocar la pieza (ease-out)
 const MX = 0.16, MY = 0.14; // margen del halo alrededor de la pieza
 const SOL = [-7, 9, 7];  // dirección del sol (se escala con el tamaño del set)
+const ROT_SOL = Math.atan2(SOL[0], SOL[2]); // giro que pone de frente al sol la silueta que proyecta la sombra
 const DL = (() => { const n = Math.hypot(...SOL); return SOL.map((v) => -v / n); })(); // dirección de la luz
 const VY0 = -7, VY1 = 10; // alto que cubre la textura de ventana + planta (en la pared)
 
@@ -622,8 +624,8 @@ function miniDe(T, bmp, flipY) {
 // corrida para que la base (no el asa) quede sobre su lugar del círculo.
 function tamPieza(ratio = 1, cx = 0.5) {
   let hh = Math.sqrt((PIEZA_B * PIEZA_B * 0.68) / ratio), ww = ratio * hh;
-  if (ww > 1.5) { ww = 1.5; hh = ww / ratio; }
-  if (hh > 1.6) { hh = 1.6; ww = hh * ratio; }
+  if (ww > ANCHO_MAX) { ww = ANCHO_MAX; hh = ww / ratio; }
+  if (hh > 1.73) { hh = 1.73; ww = hh * ratio; }
   return { wU: ww, hU: hh, shiftU: (0.5 - cx) * ww };
 }
 
@@ -946,7 +948,6 @@ export default function Taller(props) {
         if (d > N / 2) d -= N;
         return d;
       };
-      const enVentana = (i, s, N) => N <= NVENT || Math.abs(distFrente(i, s, N)) <= VENT + 0.5;
 
       // Precarga. La protagonista y las dos vecinas de cada lado van en 1600 px; las lejanas en
       // 800. Mientras arranca, solo se pide lo del frente (la del frente y sus vecinas) para que
@@ -961,6 +962,15 @@ export default function Taller(props) {
         const angosto = st.W < 700;
         const arrancando = !st.avisado;
         const R = N <= NVENT ? Math.ceil(N / 2) : VENT + 1;
+        // Reglas (corrigen el bug de "al scrollear seguido desaparecen piezas"):
+        // - La 800 de cada pieza del anillo queda SIEMPRE cargada como respaldo (no se libera
+        //   mientras la pieza esté en la ventana). Si una pieza no tiene ninguna foto lista, su 800
+        //   se sube ya, aunque la mesa esté girando (antes esperaba a que parara y la pieza quedaba
+        //   sin textura → desaparecía).
+        // - La 1600 se pide para la protagonista y ±2; se cambia recién cuando está subida a la GPU
+        //   (doble buffer: hasta entonces se ve la 800).
+        // - Nada se libera mientras la mesa gira; al quedar quieta se sueltan las 1600 lejanas (±4
+        //   o más), y solo si su 800 está lista.
         const quedan = new Set();
         for (let d = 0; d <= R; d++) {
           if (arrancando && d > 1) break;
@@ -968,27 +978,25 @@ export default function Taller(props) {
             const pz = piezas[modN(base + d * sg, N)];
             if (!pz) continue;
             const hd = fotos.get(pz.hd), sd = fotos.get(pz.sd);
+            const nada = !hd?.listo && !sd?.listo;
+            if (!(arrancando && !angosto && d <= 1 && !sd)) {
+              cargarFoto(pz.sd, pz.hd, nada || d <= 1);
+              quedan.add(pz.sd);
+            }
             if (d <= 2) {
               const directo = !angosto && d <= 1;
               if (directo || !arrancando) {
                 cargarFoto(pz.hd, pz.sd, directo);
                 quedan.add(pz.hd);
               }
-              if (!hd?.listo && (angosto || sd)) {
-                cargarFoto(pz.sd, pz.hd, d <= 1);
-                quedan.add(pz.sd);
-              }
-            } else {
-              cargarFoto(pz.sd, pz.hd, false);
-              quedan.add(pz.sd);
-              if (d <= 3 && hd?.listo) quedan.add(pz.hd); // un paso de margen antes de soltar la grande
-            }
+            } else if (hd && (d <= 3 || !sd?.listo)) quedan.add(pz.hd); // margen antes de soltar la grande
           }
         }
         for (let d = -2; d <= 2; d++) palabraDe(modN(base + d, N), false);
-        if (!arrancando) {
+        if (!arrancando && !rec.moviendo) {
           for (const [url, e] of fotos) {
             if (quedan.has(url) || !e.listo) continue;
+            for (const sl of slots) if (sl.foto === e) sl.clave = ""; // se re-arma antes del próximo dibujo
             liberarFoto(e);
             fotos.delete(url);
             st.version++;
@@ -1033,12 +1041,23 @@ export default function Taller(props) {
         const pz = new T.Group(); // la pieza + su halo: mira a la cámara (con su leve giro)
         pz.add(halo, pieza);
         grupo.add(pz);
+        // La sombra no la proyecta la pieza visible (que mira a la cámara: de costado el sol la
+        // agarra de canto y deja una lonja diagonal larga en el piso) sino una copia invisible de su
+        // silueta que mira al sol. Solo la proyectan las piezas que están en pantalla.
+        const sombraG = new T.Group();
+        sombraG.rotation.y = ROT_SOL;
+        const matCaster = new T.MeshBasicMaterial({ colorWrite: false, depthWrite: false, depthTest: false, map: vacio, alphaTest: 0.5, side: T.DoubleSide });
+        const caster = new T.Mesh(geoPieza, matCaster);
+        caster.customDepthMaterial = matSombra;
+        caster.castShadow = false;
+        sombraG.add(caster);
+        grupo.add(sombraG);
         grupo.visible = false;
         const contacto = new T.Mesh(geoCt, new T.MeshBasicMaterial({ map: texCt, transparent: true, depthWrite: false, opacity: 0, toneMapped: false }));
         contacto.renderOrder = 2;
         contacto.visible = false;
         scene.add(grupo, contacto);
-        return { i: -1, grupo, pz, pieza, halo, contacto, uni, uniHalo, matSombra, clave: "", lay: null, foto: null, modo: "", glow: false, e: 0, sc: 1 };
+        return { i: -1, grupo, pz, pieza, halo, contacto, uni, uniHalo, matSombra, sombraG, caster, clave: "", lay: null, foto: null, modo: "", glow: false, e: 0, sc: 1 };
       };
 
       // Una pieza: qué textura usa (foto o miniatura) y su tamaño. Solo trabaja si algo cambió.
@@ -1050,9 +1069,11 @@ export default function Taller(props) {
         const sd = fotos.get(pz?.sd);
         return sd?.listo ? sd : null;
       };
-      const refrescar = (sl, i, ventana) => {
+      const refrescar = (sl, i) => {
         const pz = (pr.current.piezas || [])[i];
-        const foto = ventana && pz ? fotoLista(pz) : null;
+        // con foto siempre que haya una lista (también fuera de la ventana mientras gira: nada sale
+        // de la escena en medio del giro); la silueta es solo para las que no tienen ninguna
+        const foto = pz ? fotoLista(pz) : null;
         const mini = !foto && pz?.sd ? minis.get(pz.sd) : null;
         const modo = foto ? "foto" : mini ? "sil" : "";
         const clave = [i, pz?.hd, modo, foto?.tex?.uuid, pz?.glow, st.version].join("|");
@@ -1081,7 +1102,11 @@ export default function Taller(props) {
         sl.uniHalo.dep.value = sl.uni.dep.value;
         sl.matSombra.map = modo === "foto" ? foto.tex : vacio;
         sl.pieza.material.map = sl.matSombra.map;
-        sl.pieza.castShadow = modo === "foto";
+        sl.pieza.castShadow = false;
+        sl.caster.material.map = sl.matSombra.map;
+        sl.caster.scale.set(lay.wU, lay.hU, 1);
+        sl.caster.position.set(lay.shiftU, 0, 0);
+        sl.tieneSombra = modo === "foto";
         sl.halo.visible = sl.glow;
         sl.foto = modo === "foto" ? foto : null;
         st.sombraSucia = true;
@@ -1179,8 +1204,12 @@ export default function Taller(props) {
         st.alfa = (Math.PI * 2) / N;
         const cuerda = SEP * ANCHO_MAX;
         const sinA = Math.sin(Math.PI / N);
-        st.RP = N > 1 ? Math.min(RP_MAX, Math.max(RP0, cuerda / (2 * sinA))) : RP0;
-        st.escAn = N > 1 ? Math.min(1, (2 * st.RP * sinA) / cuerda) : 1;
+        // celu: anillo más chico y piezas del anillo un poco más grandes → la cámara queda más cerca
+        // y las del fondo y los costados se leen (antes quedaban diminutas sobre el horizonte)
+        const celu = W < 900 && !pr.current.vista;
+        const rp0 = celu ? RP0_CELU : RP0;
+        st.RP = N > 1 ? Math.min(RP_MAX, Math.max(rp0, cuerda / (2 * sinA))) : rp0;
+        st.escAn = N > 1 ? Math.min(celu ? ESC_CELU : 1, (2 * st.RP * sinA) / cuerda) : 1;
         st.ZP = st.RP + GAP_PED;
         st.ZW = st.RP + GAP_PARED;
 
@@ -1266,6 +1295,7 @@ export default function Taller(props) {
         parent?.style.setProperty("--horizonte", st.hor.toFixed(1) + "px");
         // borde de abajo del pedestal en pantalla: ahí empiezan los textos en el celu
         const rPed = PED_RADIO * k * (rmax > 1 ? 1.08 : 1);
+        st.rPed = rPed;
         parent?.style.setProperty("--base-ped", proy(ref0, 0, 0, st.ZP + rPed).at(1).toFixed(1) + "px");
         rectPal.clear();
         st.version++;
@@ -1294,7 +1324,16 @@ export default function Taller(props) {
         let hP = m.h * F;
         const centro = (pr.current.vista ? 0.22 : 0.24) * st.H;
         let top = centro + m.cy * F - hP / 2;
-        const lim = Math.min(st.backTop - 6, topeProt + 0.08 * hP);
+        // ¿la protagonista es angosta al lado de la palabra? (pino, tazas) → la palabra puede bajar
+        // detrás de ella: se lee entera a los dos lados y por arriba. Si es ancha (budinera, platos)
+        // la palabra queda arriba de la pieza, achicándose si hace falta.
+        // Compu: la palabra va siempre a ~80% del ancho, arriba (debajo del logo), y puede quedar
+        // detrás de la protagonista y del anillo: la mitad de arriba de las letras y las de los
+        // costados se leen por encima de la pieza (como el título de una revista detrás de la cabeza).
+        // Antes se achicaba hasta entrar entre el logo y las piezas del fondo y quedaba chica.
+        const compu = st.W >= 900 && !pr.current.vista;
+        const lim = compu ? Infinity : Math.min(st.backTop - 6, topeProt + 0.08 * hP);
+        if (compu) top = Math.max(st.techo, top);
         if (top + hP > lim) top = lim - hP;
         if (top < st.techo) {
           top = st.techo;
@@ -1526,8 +1565,7 @@ export default function Taller(props) {
             continue;
           }
           const dF = distFrente(i, s, N);
-          const ventana = enVentana(i, s, N);
-          refrescar(sl, i, ventana);
+          refrescar(sl, i);
           if (!sl.modo) continue;
           const a = N > 1 ? envolver(dF * st.alfa) : 0;
           const c = (1 + Math.cos(a)) / 2; // 1 al frente del anillo, 0 al fondo
@@ -1546,7 +1584,20 @@ export default function Taller(props) {
           sl.grupo.visible = true;
           sl.grupo.position.set(x, y, zz);
           sl.pz.scale.setScalar(sc);
+          sl.sombraG.scale.setScalar(sc);
+          // ¿está (aunque sea en parte) en pantalla? Si no, no proyecta sombra
+          let enPantalla = false;
+          if (sl.tieneSombra) {
+            tmp.set(x, y + sl.lay.hU * sc * 0.5, zz).project(cam);
+            const mx = (sl.lay.wU * sc * 2) / Math.max(0.5, camPos.distanceTo(sl.grupo.position));
+            enPantalla = tmp.z < 1 && tmp.x > -1 - mx && tmp.x < 1 + mx;
+          }
+          if (sl.caster.castShadow !== enPantalla) {
+            sl.caster.castShadow = enPantalla;
+            st.sombraSucia = true;
+          }
           sl.e = e;
+          sl.sube = sube;
           sl.sc = sc;
           // mira a la cámara, con una leve rotación hacia la tangente (máx. ~30°) mientras está en el anillo
           const giro = 0.52 * Math.sin(a) * (1 - e);
@@ -1590,13 +1641,22 @@ export default function Taller(props) {
           if (!prot || e > prot.e) prot = sl;
           visibles.push(sl);
         }
-        // sombra marcada de la protagonista sobre la tapa del pedestal
-        ctProt.visible = !!prot && prot.e > 0.02;
+        if (visibles.length !== st.nVis) {
+          st.nVis = visibles.length;
+          canvas.dataset.piezas = visibles.length + "/" + N;
+        }
+        // sombra marcada de la protagonista sobre la tapa del pedestal. Va pegada a la tapa (nunca
+        // fuera de su borde: antes seguía a la pieza que subía en arco y quedaba un "disco" flotando
+        // al costado del pedestal) y aparece recién cuando la pieza ya está apoyada.
+        ctProt.visible = !!prot && prot.sube > 0.02;
         if (ctProt.visible) {
-          const w = prot.lay.wU * prot.sc;
-          ctProt.position.set(prot.grupo.position.x + prot.lay.shiftU * prot.sc + 0.06 * w, st.HPed + 0.004, st.ZP - 0.04 * w);
+          const w = Math.min(prot.lay.wU * prot.sc, st.rPed * 1.9);
+          const px = prot.grupo.position.x + prot.lay.shiftU * prot.sc + 0.06 * w;
+          const lim = Math.max(0, st.rPed - w * 0.5);
+          ctProt.position.set(Math.max(-lim, Math.min(lim, px)), st.HPed + 0.004, st.ZP - 0.04 * w);
           ctProt.scale.set(w * 1.05, 1, w * 0.62);
-          ctProt.material.opacity = 0.6 * Math.pow(prot.e, 2);
+          const fuera = Math.min(1, Math.max(0, (Math.abs(prot.grupo.position.x) - st.rPed * 0.35) / (st.rPed * 0.5)));
+          ctProt.material.opacity = 0.6 * Math.pow(prot.sube, 2) * (1 - fuera);
         }
         let glowX = 0, glowY = 0;
         if (glowSl?.lay) {
@@ -1715,6 +1775,8 @@ export default function Taller(props) {
 
       // ---------- Eventos ----------
       const offRec = rec.escuchar((tipo) => {
+        // al quedar quieta: recién ahí se sueltan las fotos grandes que ya no hacen falta
+        if (tipo === "quieto") idle(() => vivo && !rec.moviendo && precargar(), { timeout: 400 });
         if (tipo === "indice" && (pr.current.reducido || mqReducido.matches)) {
           // sin giro: corte directo con un fundido corto
           canvas.style.transition = "none";

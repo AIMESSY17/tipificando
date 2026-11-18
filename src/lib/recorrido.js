@@ -19,6 +19,8 @@
 const K = 90;                       // rigidez del resorte (1/s²)
 const C = 2 * Math.sqrt(K) * 0.92;  // amortiguación (apenas por debajo de la crítica: asienta suave)
 const TAU = 0.3;                    // cuánto "vuela" la inercia (s)
+const PASO_MS = 350;                // ruedita / teclado: como mucho un paso cada 350 ms (el resto se descarta)
+const FLICK_MAX = 3;                // un flick gira como mucho 3 piezas
 
 export class Recorrido {
   constructor(s = 0) {
@@ -87,7 +89,9 @@ export class Recorrido {
     let destino = Math.round(this.s + v * TAU);
     // un gesto rápido siempre avanza al menos una pieza en su sentido
     if (Math.abs(v) > 1.2 && destino === Math.round(this.s) && Math.sign(destino - this.s) !== Math.sign(v)) destino += Math.sign(v);
-    this.irA(destino, v);
+    const r0 = Math.round(this.s);
+    destino = Math.max(r0 - FLICK_MAX, Math.min(r0 + FLICK_MAX, destino));
+    this.irA(destino, Math.max(-12, Math.min(12, v)));
   }
 
   // ---------- Resorte ----------
@@ -110,6 +114,19 @@ export class Recorrido {
   ir(delta) {
     const base = this.modo === "resorte" ? this.obj : Math.round(this.s);
     this.irA(base + delta);
+  }
+  // Un paso limitado (ruedita, trackpad, teclado, flechas): como mucho uno cada PASO_MS y nunca
+  // más de una pieza por delante de donde está el anillo. Lo que llega en el medio se descarta
+  // (no se encola), así un scroll largo no acumula vueltas y siempre termina en una pieza exacta.
+  pasoLimitado(dir, now = performance.now()) {
+    if (!dir) return false;
+    if (now - (this.ultPaso || -1e9) < PASO_MS) return false;
+    const base = this.modo === "resorte" ? this.obj : Math.round(this.s);
+    if (Math.abs(base + dir - this.s) > 1.6) return false;
+    this.ultPaso = now;
+    if (this.modo === "arrastre") this.drag = null;
+    this.irA(base + dir, this.modo === "resorte" ? this.v : 0);
+    return true;
   }
   // ir a un índice de pieza (0..N-1) por el camino más corto
   irAIndice(i, N) {

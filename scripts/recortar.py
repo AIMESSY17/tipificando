@@ -31,6 +31,11 @@ for f in sorted(src.iterdir()):
         a[..., 3] = np.where(ndimage.binary_dilation(keep, iterations=3), alpha, 0)
     out = Image.fromarray(a)
     out = out.crop(out.getbbox())
+    # margen transparente (4% costados y arriba, 1,2% abajo): sin margen la escena estira el borde.
+    # Para las fotos que ya están en public/productos: python scripts/bordes.py --arreglar
+    lado = max(out.size); ml, mb = round(lado * 0.04), round(lado * 0.012)
+    con = Image.new("RGBA", (out.width + 2 * ml, out.height + ml + mb), (0, 0, 0, 0))
+    con.paste(out, (ml, ml)); out = con
     out.thumbnail((900, 900), Image.LANCZOS)
     name = f.stem.lower().replace(" ", "-")
     out.save(dst / f"{name}.webp", "WEBP", quality=86, method=6)

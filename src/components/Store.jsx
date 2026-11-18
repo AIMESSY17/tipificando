@@ -62,7 +62,7 @@ export default function Store({ products, settings, envios = [], inicial = 0, mo
   const [sin3d, setSin3d] = useState(false);
   const cartBtn = useRef(null);
   const drag = useRef(null);
-  const rueda = useRef({ x: 0, t: 0, timer: 0, activa: false, ult: 0 });
+  const rueda = useRef({ x: 0, t: 0 });
   const activo = useRef(active);
 
   const p = products[active] || products[0];
@@ -128,8 +128,6 @@ export default function Store({ products, settings, envios = [], inicial = 0, mo
     clara: isLight(x.bg, 0.55),
   })), [products, pedestalUrl, settings.pedestal]);
 
-  // tres miniaturas para el botón "Ver las N piezas" (las nuevas primero)
-  const pila = useMemo(() => [...products].sort((a, b) => (b.badge === "nuevo") - (a.badge === "nuevo")).slice(0, 3), [products]);
 
   // =================== Ficha (con la cámara que se acerca a la pieza) ===================
   const abrirFicha = (i) => {
@@ -154,46 +152,35 @@ export default function Store({ products, settings, envios = [], inicial = 0, mo
   useEffect(() => {
     const k = (e) => {
       if (bloqueado || e.target.closest?.("input, textarea, select")) return;
-      if (e.key === "ArrowRight" || e.key === "ArrowDown" || e.key === "PageDown") { e.preventDefault(); rec.ir(1); }
-      if (e.key === "ArrowLeft" || e.key === "ArrowUp" || e.key === "PageUp") { e.preventDefault(); rec.ir(-1); }
+      if (e.key === "ArrowRight" || e.key === "ArrowDown" || e.key === "PageDown") { e.preventDefault(); rec.pasoLimitado(1); }
+      if (e.key === "ArrowLeft" || e.key === "ArrowUp" || e.key === "PageUp") { e.preventDefault(); rec.pasoLimitado(-1); }
       if (e.key === "Enter" && !rec.moviendo) abrirFicha(activo.current);
     };
     window.addEventListener("keydown", k);
     return () => window.removeEventListener("keydown", k);
   }, [rec, bloqueado]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  // Ruedita (una pieza por "click") y trackpad (sigue al gesto y al final se acomoda, igual que el dedo)
+  // Ruedita y trackpad: pasos de a una pieza, como mucho uno cada 350 ms (rec.pasoLimitado). El
+  // trackpad suma su recorrido hasta un umbral; lo que llega mientras el paso está "en frío" se
+  // descarta, así un scroll largo y continuo nunca acumula vueltas y siempre frena en una pieza.
   const onWheel = (e) => {
     if (bloqueado || N < 2) return;
     const r = rueda.current;
     const d = Math.abs(e.deltaX) > Math.abs(e.deltaY) ? e.deltaX : e.deltaY;
     if (!d) return;
-    const now = e.timeStamp || performance.now();
-    const click = e.deltaMode !== 0 || (Math.abs(d) >= 60 && Math.abs(e.deltaX) < 2 && !r.activa);
-    if (click) {
-      if (now - r.ult < 90) return;
-      r.ult = now;
-      rec.ir(d > 0 ? 1 : -1);
-      return;
-    }
-    if (!r.activa) {
-      r.activa = true;
-      r.x = 0;
-      rec.agarrar(0, now);
-    }
-    r.x -= d;
+    const now = performance.now();
+    const px = e.deltaMode === 1 ? d * 40 : e.deltaMode === 2 ? d * 400 : d;
+    if (now - r.t > 200 || Math.sign(px) !== Math.sign(r.x)) r.x = 0; // gesto nuevo o cambio de sentido
     r.t = now;
-    rec.arrastrar(r.x, now);
-    clearTimeout(r.timer);
-    r.timer = setTimeout(() => {
-      r.activa = false;
-      rec.soltar(r.t + 16);
-    }, 110);
+    r.x += px;
+    if (Math.abs(r.x) < 40) return;
+    rec.pasoLimitado(r.x > 0 ? 1 : -1, now);
+    r.x = 0;
   };
 
   // Deslizar: el anillo gira con el dedo 1:1 (horizontal). Agarrar frena cualquier giro en curso.
   const onDown = (e) => {
-    if (e.button > 0 || bloqueado || e.target.closest("button, a, input, textarea, select, .capa, .nav-taller")) return (drag.current = null);
+    if (e.button > 0 || bloqueado || e.target.closest("button, a, input, textarea, select, .capa, .nav-taller, .hoja-maquina")) return (drag.current = null);
     pedirGiroscopio();
     const t = e.timeStamp || performance.now();
     drag.current = { x: e.clientX, y: e.clientY, id: e.pointerId, eje: null, enPieza: !!e.target.closest(".pieza-activa"), quieto: !rec.moviendo };
@@ -326,9 +313,9 @@ export default function Store({ products, settings, envios = [], inicial = 0, mo
       )}
 
       <nav className="nav-taller" aria-label="Piezas">
-        <button className="nav-flecha izq" onClick={() => rec.ir(-1)} aria-label="Pieza anterior">←</button>
+        <button className="nav-flecha izq" onClick={() => rec.pasoLimitado(-1)} aria-label="Pieza anterior">←</button>
         <span className="nav-num" aria-live="polite">{dos(active + 1)} / {dos(N)}</span>
-        <button className="nav-flecha der" onClick={() => rec.ir(1)} aria-label="Pieza siguiente">→</button>
+        <button className="nav-flecha der" onClick={() => rec.pasoLimitado(1)} aria-label="Pieza siguiente">→</button>
       </nav>
 
       <section className="info">
@@ -345,29 +332,26 @@ export default function Store({ products, settings, envios = [], inicial = 0, mo
         </div>
         <div className="acciones">
           <button className="btn-principal" onClick={() => abrirFicha(active)}>Elegir color</button>
-          {N > 1 && (
-            <button className="btn-todo" onClick={() => setPanel("todo")}>
-              <span className="pila" aria-hidden>
-                {!loading && pila.map((x) => (
-                  <span key={x.id} style={{ "--pared": vivo(x.bg) }}><img src={fotoChica(x.image_url)} alt="" decoding="async" /></span>
-                ))}
-              </span>
-              <span>Ver las {N} piezas</span>
-              <span className="flecha" aria-hidden>→</span>
-            </button>
-          )}
         </div>
         {!visto && <p className="pista"><span className="pista-izq">←</span> deslizá <span className="pista-der">→</span></p>}
       </section>
 
-      <footer className="pie">
-        <a href={`https://instagram.com/${settings.instagram}`} target="_blank" rel="noreferrer">@{settings.instagram}</a>
-        <span>·</span>
-        <a href="/arrepentimiento">Botón de arrepentimiento</a>
-        {(settings.negocio_nombre || settings.negocio_cuit || settings.negocio_direccion) && (
-          <small className="pie-legal">{[settings.negocio_nombre, settings.negocio_cuit && "CUIT " + settings.negocio_cuit, settings.negocio_direccion].filter(Boolean).join(" · ")}</small>
-        )}
-      </footer>
+      {/* con más de una pieza, el pie (Instagram y botón de arrepentimiento) va en la hoja de la máquina de escribir */}
+      {N > 1 ? (
+        <HojaMaquina
+          products={products}
+          actual={active}
+          abierta={panel === "todo"}
+          visible={!loading}
+          reducido={reduced}
+          onAbrir={() => setPanel("todo")}
+          onCerrar={() => setPanel((x) => (x === "todo" ? null : x))}
+          onPick={(i) => { setPanel(null); rec.irAIndice(i, N); }}
+          pie={<Pie settings={settings} />}
+        />
+      ) : (
+        <footer className="pie"><Pie settings={settings} /></footer>
+      )}
 
       {sheet !== null && (
         <Ficha prod={products[sheet]} settings={settings} vacaciones={vacaciones} con3d={!sin3d} cerrando={cerrando} onClose={cerrarFicha} onAdd={add} />
@@ -377,9 +361,6 @@ export default function Store({ products, settings, envios = [], inicial = 0, mo
       )}
       {panel === "pagar" && (
         <Pagar cart={cart} settings={settings} envios={envios} vacaciones={vacaciones} pagos={pagos} onBack={() => setPanel("carrito")} onClose={() => setPanel(null)} flash={flash} />
-      )}
-      {panel === "todo" && (
-        <VerTodo products={products} actual={active} reducido={reduced} onClose={() => setPanel(null)} onPick={(i) => { setPanel(null); rec.irAIndice(i, N); }} />
       )}
 
       {toast && <div className="toast" role="status">{toast}</div>}
@@ -742,79 +723,209 @@ function Pagar({ cart, settings, envios, vacaciones, pagos, onBack, onClose, fla
   );
 }
 
-// ---------- Ver todo ----------
-// Grilla aireada (2 columnas en el celu, 3–4 en la compu): cada pieza recortada sobre su pared y su
-// mesa, nombre en máquina de escribir, precio, puntos de color y etiqueta. Al tocar una tarjeta se
-// cierra (salida corta) y la mesa gira hasta esa pieza.
+// ---------- Pie (Instagram, arrepentimiento y datos del negocio) ----------
+function Pie({ settings }) {
+  return (
+    <>
+      <a href={`https://instagram.com/${settings.instagram}`} target="_blank" rel="noreferrer">@{settings.instagram}</a>
+      <span>·</span>
+      <a href="/arrepentimiento">Botón de arrepentimiento</a>
+      {(settings.negocio_nombre || settings.negocio_cuit || settings.negocio_direccion) && (
+        <small className="pie-legal">{[settings.negocio_nombre, settings.negocio_cuit && "CUIT " + settings.negocio_cuit, settings.negocio_direccion].filter(Boolean).join(" · ")}</small>
+      )}
+    </>
+  );
+}
+
+// Texto que se tipea letra por letra (lo que falta ocupa su lugar invisible: el renglón no salta)
+function Tipeo({ texto, ms = 22, demora = 0, activo = true, reducido, cursor = false }) {
+  const [n, setN] = useState(reducido || !activo ? texto.length : 0);
+  useEffect(() => {
+    if (reducido || !activo) return setN(texto.length);
+    setN(0);
+    let i = 0, t = 0;
+    const paso = () => {
+      i++;
+      setN(i);
+      if (i < texto.length) t = setTimeout(paso, ms);
+    };
+    t = setTimeout(paso, demora);
+    return () => clearTimeout(t);
+  }, [texto, ms, demora, activo, reducido]);
+  return (
+    <>
+      {texto.slice(0, n)}
+      {cursor && <span className="cursor-barra" />}
+      <span className="tipeo-resto" aria-hidden>{texto.slice(n)}</span>
+    </>
+  );
+}
+
+// ---------- Ver todo: la hoja de la máquina de escribir ----------
+// Abajo de la pantalla asoma el borde de una hoja de papel saliendo del rodillo, con las miniaturas
+// de TODAS las piezas en fila y «catálogo completo · N piezas ↑» tipeado. La hoja respira (sube
+// 4 px y baja cada ~4 s). Al tocarla o arrastrarla hacia arriba sube y cubre la pantalla, con la
+// grilla de siempre (filtros, tarjetas; al tocar una pieza la mesa gira hasta ella). Se cierra
+// bajándola (gesto desde la cabecera) o con ✕ / Escape.
 const etiquetaDe = (b) => (b === "ultimas" ? "Últimas" : b ? "Nuevo" : "");
 const catDe = (c = "") => c.split(/[/·]/)[0].trim();
-function VerTodo({ products, actual, reducido, onClose, onPick }) {
+const MINI = 30, MINI_GAP = 6;
+function HojaMaquina({ products, actual, abierta, visible, reducido, onAbrir, onCerrar, onPick, pie }) {
+  const N = products.length;
   const cats = ["todo", ...new Set(products.map((p) => catDe(p.category)).filter(Boolean))];
   const [cat, setCat] = useState("todo");
-  const [cerrando, setCerrando] = useState(false);
+  const [dy, setDy] = useState(0); // arrastre en curso (px; negativo = hacia arriba)
+  const [montada, setMontada] = useState(abierta); // la grilla se arma al abrir y se desarma al terminar de bajar
+  const [cabe, setCabe] = useState(N);
+  const tira = useRef(null);
+  const gesto = useRef(null);
+  const raiz = useRef(null);
   const list = products.map((p, i) => ({ p, i })).filter(({ p }) => cat === "todo" || catDe(p.category) === cat);
-  const salir = (fn) => {
-    if (cerrando) return;
-    if (reducido) return fn();
-    setCerrando(true);
-    setTimeout(fn, 230);
-  };
-  const cerrarRef = useRef(null);
-  cerrarRef.current = () => salir(onClose);
+  const texto = `catálogo completo · ${N} piezas`;
+
   useEffect(() => {
+    if (abierta) return setMontada(true);
+    const t = setTimeout(() => setMontada(false), reducido ? 0 : 560);
+    return () => clearTimeout(t);
+  }, [abierta, reducido]);
+
+  // cuántas miniaturas entran en la fila (si no entran todas: las que entren + «+N»)
+  useEffect(() => {
+    const el = tira.current;
+    if (!el) return;
+    const medir = () => {
+      const n = Math.floor((el.clientWidth + MINI_GAP) / (MINI + MINI_GAP));
+      setCabe(n >= N ? N : Math.max(1, n - 1));
+    };
+    medir();
+    const ro = new ResizeObserver(medir);
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, [N]);
+
+  const cerrarRef = useRef(onCerrar);
+  cerrarRef.current = onCerrar;
+  useEffect(() => {
+    if (!abierta) return;
     const k = (e) => e.key === "Escape" && cerrarRef.current();
     window.addEventListener("keydown", k);
+    raiz.current?.querySelector(".hoja-cerrar")?.focus({ preventScroll: true });
     return () => window.removeEventListener("keydown", k);
-  }, []);
+  }, [abierta]);
+
+  // Gesto: cerrada, toda la hoja se toca o se arrastra hacia arriba; abierta, se baja desde la cabecera.
+  const down = (e) => {
+    if (e.button > 0) return;
+    if (abierta ? !e.target.closest(".hoja-tirador, .todo-head") || e.target.closest("button") : e.target.closest("a")) return;
+    gesto.current = { y: e.clientY, t: e.timeStamp, id: e.pointerId, mov: false };
+    try { e.currentTarget.setPointerCapture(e.pointerId); } catch {}
+  };
+  const move = (e) => {
+    const g = gesto.current;
+    if (!g || g.id !== e.pointerId) return;
+    const d = e.clientY - g.y;
+    if (!g.mov && Math.abs(d) < 6) return;
+    g.mov = true;
+    setDy(abierta ? Math.max(0, d) : Math.min(0, d));
+  };
+  const up = (e, cancelado) => {
+    const g = gesto.current;
+    if (!g || g.id !== e.pointerId) return;
+    gesto.current = null;
+    const d = e.clientY - g.y, v = d / Math.max(1, e.timeStamp - g.t); // px/ms
+    setDy(0);
+    if (cancelado) return;
+    if (!abierta && (!g.mov || d < -36 || v < -0.4)) onAbrir();
+    else if (abierta && g.mov && (d > 90 || v > 0.5)) onCerrar();
+  };
+
   return (
-    <div className={"capa todo" + (cerrando ? " cerrando" : "")} onClick={() => salir(onClose)}>
-      <div className="todo-caja" onClick={(e) => e.stopPropagation()} role="dialog" aria-modal="true" aria-label="Todas las piezas">
-        <header className="todo-head">
-          <div>
-            <p className="todo-kicker"><Logo titila={false} /></p>
-            <h3>Todas las piezas <span className="todo-cuenta">{list.length}</span></h3>
-          </div>
-          <button className="cerrar" onClick={() => salir(onClose)} aria-label="Cerrar">×</button>
-        </header>
-        {cats.length > 2 && (
-          <div className="filtros" role="tablist" aria-label="Categorías">
-            {cats.map((c) => (
-              <button key={c} role="tab" aria-selected={c === cat} className={"chip" + (c === cat ? " on" : "")} onClick={() => setCat(c)}>{c}</button>
+    <div
+      ref={raiz}
+      className={"hoja-maquina" + (abierta ? " abierta" : "") + (visible ? " visible" : "") + (dy ? " arrastrando" : "")}
+      style={{ "--dy": dy + "px" }}
+      onPointerDown={down}
+      onPointerMove={move}
+      onPointerUp={(e) => up(e, false)}
+      onPointerCancel={(e) => up(e, true)}
+      role={abierta ? "dialog" : undefined}
+      aria-modal={abierta || undefined}
+      aria-label={abierta ? "Todas las piezas" : undefined}
+    >
+      <div className="hoja-papel">
+        <div
+          className="hoja-asoma"
+          role="button"
+          tabIndex={abierta ? -1 : 0}
+          aria-label={`Ver el catálogo completo: ${N} piezas`}
+          aria-hidden={abierta || undefined}
+          onKeyDown={(e) => (e.key === "Enter" || e.key === " ") && (e.preventDefault(), onAbrir())}
+        >
+          <div className="hoja-tira" ref={tira} aria-hidden>
+            {visible && products.slice(0, cabe).map((x, k) => (
+              <img key={x.id} src={fotoChica(x.image_url)} alt="" decoding="async" style={{ "--k": k }} />
             ))}
+            {visible && cabe < N && <span className="hoja-mas">+{N - cabe}</span>}
           </div>
-        )}
-        <div className="grilla" key={cat}>
-          {list.map(({ p, i }, k) => (
-            <button
-              key={p.id}
-              className={"card" + (i === actual ? " actual" : "")}
-              style={{ "--pared": vivo(p.bg), "--mesa": vivo(p.table_color || MESA_DEF, 1.06), "--k": k }}
-              onClick={() => salir(() => onPick(i))}
-              aria-label={`${p.name}, ${money(precioDe(p))}`}
-            >
-              <span className="card-foto">
-                <img
-                  src={fotoChica(p.image_url)}
-                  alt=""
-                  loading={k < 6 ? "eager" : "lazy"}
-                  decoding="async"
-                  onError={(e) => { if (e.currentTarget.src !== new URL(p.image_url, location.href).href) e.currentTarget.src = p.image_url; }}
-                />
-                {p.badge && <span className="card-etiqueta">{etiquetaDe(p.badge)}</span>}
-              </span>
-              <span className="card-info">
-                <b className="card-nombre">{p.name}</b>
-                <span className="card-fila">
-                  <span className="card-precio">{enOferta(p) && <s>{money(p.price)}</s>}{money(precioDe(p))}</span>
-                  <span className="puntos-color">
-                    {(p.colors || []).slice(0, 5).map((c) => <span key={c.name} className={c.agotado ? "agotado" : ""} style={{ "--c": c.hex }} />)}
+          <p className="hoja-tipeo" aria-hidden>
+            {visible ? <Tipeo texto={texto + " ↑"} ms={45} demora={700} reducido={reducido} cursor /> : <span className="tipeo-resto">{texto} ↑</span>}
+          </p>
+          <div className="maquina-pie">{pie}</div>
+        </div>
+
+        <div className="hoja-contenido" aria-hidden={!abierta || undefined}>
+          <div className="hoja-tirador" aria-hidden><span /></div>
+          <header className="todo-head">
+            <div>
+              <p className="todo-kicker"><Logo titila={false} /></p>
+              <h3>{montada ? <Tipeo texto="Todas las piezas" ms={18} demora={260} activo={abierta} reducido={reducido} /> : "Todas las piezas"} <span className="todo-cuenta">{list.length}</span></h3>
+            </div>
+            <button className="cerrar hoja-cerrar" onClick={onCerrar} aria-label="Cerrar" tabIndex={abierta ? 0 : -1}>×</button>
+          </header>
+          {montada && cats.length > 2 && (
+            <div className="filtros" role="tablist" aria-label="Categorías">
+              {cats.map((c) => (
+                <button key={c} role="tab" aria-selected={c === cat} className={"chip" + (c === cat ? " on" : "")} onClick={() => setCat(c)}>{c}</button>
+              ))}
+            </div>
+          )}
+          {montada && (
+            <div className="grilla" key={cat}>
+              {list.map(({ p, i }, k) => (
+                <button
+                  key={p.id}
+                  className={"card" + (i === actual ? " actual" : "")}
+                  style={{ "--pared": vivo(p.bg), "--mesa": vivo(p.table_color || MESA_DEF, 1.06), "--k": k }}
+                  onClick={() => onPick(i)}
+                  aria-label={`${p.name}, ${money(precioDe(p))}`}
+                >
+                  <span className="card-foto">
+                    <img
+                      src={fotoChica(p.image_url)}
+                      alt=""
+                      loading={k < 6 ? "eager" : "lazy"}
+                      decoding="async"
+                      onError={(e) => { if (e.currentTarget.src !== new URL(p.image_url, location.href).href) e.currentTarget.src = p.image_url; }}
+                    />
+                    {p.badge && <span className="card-etiqueta">{etiquetaDe(p.badge)}</span>}
                   </span>
-                </span>
-              </span>
-            </button>
-          ))}
+                  <span className="card-info">
+                    <b className="card-nombre"><Tipeo texto={p.name} ms={14} demora={320 + Math.min(k, 12) * 40} activo={abierta} reducido={reducido} /></b>
+                    <span className="card-fila">
+                      <span className="card-precio">{enOferta(p) && <s>{money(p.price)}</s>}{money(precioDe(p))}</span>
+                      <span className="puntos-color">
+                        {(p.colors || []).slice(0, 5).map((c) => <span key={c.name} className={c.agotado ? "agotado" : ""} style={{ "--c": c.hex }} />)}
+                      </span>
+                    </span>
+                  </span>
+                </button>
+              ))}
+            </div>
+          )}
+          {montada && <footer className="hoja-pie-abierta">{pie}</footer>}
         </div>
       </div>
+      <div className="rodillo" aria-hidden />
     </div>
   );
 }
