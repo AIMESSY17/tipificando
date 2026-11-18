@@ -9,6 +9,7 @@ import Clientes from "./Clientes";
 import Cupones from "./Cupones";
 import Envios from "./Envios";
 import Ajustes from "./Ajustes";
+import { Logo } from "@/components/Logo";
 
 export { Editor } from "./Piezas";
 
@@ -57,7 +58,7 @@ export default function Admin() {
   if (!db) return <SinSupabase />;
   if (!session) return <Login db={db} />;
   if (recuperando) return <NuevaClave db={db} onListo={() => setRecuperando(false)} />;
-  if (ok === null) return <div className="adm-centro"><span className="adm-logo grande">tipificado…<i>|</i></span><p className="adm-cargando">Entrando…</p></div>;
+  if (ok === null) return <div className="adm-centro"><span className="adm-logo grande"><Logo /></span><p className="adm-cargando">Entrando…</p></div>;
   if (!ok)
     return (
       <div className="adm-centro">
@@ -147,7 +148,7 @@ function Panel({ db, session }) {
     <Ctx.Provider value={ctx}>
       <div className="adm">
         <nav className="adm-tabs" aria-label="Secciones">
-          <span className="adm-logo adm-tabs-logo">tipificado…<i>|</i></span>
+          <span className="adm-logo adm-tabs-logo"><Logo /></span>
           {TABS.map(([k, t, d]) => (
             <button key={k} className={(tab === k ? "on " : "") + (MAS.includes(k) ? "solo-compu" : "")} onClick={() => ir(k)} aria-current={tab === k ? "page" : undefined}>
               <span className="adm-tab-ic"><Icono d={d} />{k === "pedidos" && nuevos > 0 && <em>{nuevos}</em>}</span>{t}
@@ -203,7 +204,7 @@ function Mas({ ir }) {
 function SinSupabase() {
   return (
     <div className="adm-centro adm-conectar">
-      <span className="adm-logo grande">tipificado…<i>|</i></span>
+      <span className="adm-logo grande"><Logo /></span>
       <h1>Falta conectar la base de datos</h1>
       <p>El panel guarda las piezas, los pedidos y los cupones en Supabase (gratis). Para activarlo:</p>
       <ol>
@@ -245,7 +246,7 @@ function Login({ db }) {
   const cambiar = (m) => { setModo(m); setErr(""); setSent(false); };
   return (
     <div className="adm-centro">
-      <span className="adm-logo grande">tipificado…<i>|</i></span>
+      <span className="adm-logo grande"><Logo /></span>
       {sent ? (
         <>
           <p>{modo === "olvide" ? "Te mandamos un mail a " : "Te mandamos un link a "}<b>{email}</b>. {modo === "olvide" ? "Abrilo para elegir una contraseña nueva." : "Abrilo desde este mismo celular o compu para entrar."}</p>
@@ -287,7 +288,7 @@ function NuevaClave({ db, onListo }) {
   };
   return (
     <div className="adm-centro">
-      <span className="adm-logo grande">tipificado…<i>|</i></span>
+      <span className="adm-logo grande"><Logo /></span>
       <h1>Nueva contraseña</h1>
       <form onSubmit={go} className="adm-form">
         <input type="password" required placeholder="contraseña nueva" value={a} onChange={(e) => setA(e.target.value)} autoComplete="new-password" />

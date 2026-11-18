@@ -4,6 +4,7 @@ import { browserDb } from "@/lib/supabase-browser";
 import { money } from "@/lib/format";
 import { numPedido } from "@/lib/precios";
 import { ETIQUETA_ESTADO } from "../../ui";
+import { Logo } from "@/components/Logo";
 
 // Comprobante del pedido: página imprimible (o "Guardar como PDF") con la marca.
 export default function Comprobante({ id }) {
@@ -37,7 +38,7 @@ export default function Comprobante({ id }) {
       <article className="cpb">
         <header className="cpb-cab">
           <div>
-            <div className="cpb-logo">tipificado…<i>|</i></div>
+            <div className="cpb-logo"><Logo titila={false} /></div>
             <p>{s.negocio_nombre || "Tipificado cerámica"}</p>
             {s.negocio_cuit && <p>CUIT {s.negocio_cuit}</p>}
             {s.negocio_direccion && <p>{s.negocio_direccion}</p>}

@@ -4,7 +4,7 @@ import { input, escuchar } from "@/lib/inclinacion";
 import { prepararFoto } from "@/lib/profundidad";
 import { cargarImagen } from "@/lib/fotos";
 import { Recorrido, modN } from "@/lib/recorrido";
-import { cargarFuente, pintarPalabra, medirPalabra, tamPalabra } from "@/lib/palabra";
+import { cargarFuente, fuenteFinal, olvidarMedidas, pintarPalabra, medirPalabra, tamPalabra } from "@/lib/palabra";
 import { vivoLab, hexAOklab, mezclaOklch, oklabARgb } from "@/lib/color";
 
 // =====================================================================
@@ -25,25 +25,35 @@ import { vivoLab, hexAOklab, mezclaOklch, oklabARgb } from "@/lib/color";
 //    de ventana y planta proyectadas, charco de luz del foco, sombras reales, grano y viñeta).
 //  - El pedestal protagonista 3D (travertino o torno) con un foco cálido de caída suave.
 //  - Las piezas 2.5D (parallax por profundidad + brillo de esmalte). La protagonista: grande,
-//    nítida, con luz de recorte y sombra marcada. Las del anillo: ~40% del tamaño, más oscuras,
-//    40% desaturadas y desenfocadas, con su sombra de contacto en el piso.
+//    nítida, con luz de recorte y sombra marcada. Las del anillo: con su color real (solo una
+//    perspectiva atmosférica leve hacia el color de la pared, máx. 18%), las de los costados casi
+//    nítidas y las del fondo apenas desenfocadas. Cada una proyecta la sombra de su silueta.
+//  - Fotos: 1600 px para la protagonista y las dos vecinas de cada lado, 800 px para las lejanas
+//    (alfa premultiplicado + mipmaps + anisotropía máxima: sin halos oscuros en el recorte).
 //  - Si hay muchas piezas, solo las cercanas al frente tienen la foto en la GPU; el resto se
 //    dibuja como siluetas tenues (miniatura de 96 px).
 //  - Haces de luz y polvo; profundidad de campo barata (mipmaps); calidad adaptativa.
+//
+//  Arranque: dibuja en cuanto la pieza del frente está lista, sin esperar ningún gesto. Un vigía
+//  dibuja igual si el navegador no entrega requestAnimationFrame (algunos webviews lo frenan
+//  hasta el primer toque) y la fuente de la palabra tiene un tope de espera.
 // =====================================================================
 
-const PITCH = (20 * Math.PI) / 180; // la cámara mira 20° hacia abajo
+const PITCH = (23 * Math.PI) / 180; // la cámara mira 23° hacia abajo (celu: elipse alta alrededor de la protagonista)
+const PITCH_COMPU = (16 * Math.PI) / 180; // compu (pantalla ancha): más baja, deja lugar a la palabra
 const PITCH_ZOOM = (9 * Math.PI) / 180; // y un poco menos cuando se acerca a la pieza
 const ALTO = 1.1;        // alto de la geometría del pedestal
 const PED_ALTO = 0.34, PED_RADIO = 0.58; // pedestal en unidades de la protagonista
-const RP0 = 2, RP_MAX = 3.8; // radio del anillo (crece con la cantidad de piezas, hasta un tope)
+const RP0 = 5, RP_MAX = 8; // radio del anillo (holgado: la protagonista se lee bien más grande; crece con la cantidad hasta un tope)
+const ANCHO_MAX = 1.5;   // ancho máximo de una pieza del anillo (ver tamPieza)
+const SEP = 1.3;         // distancia entre centros vecinos ≥ 1.3 × la pieza más ancha
 const GAP_PED = 1.6;     // el pedestal está esto delante del anillo
-const GAP_PARED = 6;     // del anillo a la pared
-const RATIO_ANILLO = 0.4; // tamaño en pantalla de las piezas del anillo respecto de la protagonista
+const GAP_PARED = 2.6;   // del anillo a la pared (cerca: deja lugar arriba para la palabra)
+const NIEBLA = 0.18;     // perspectiva atmosférica máxima (las del fondo, hacia el color de la pared)
 const LAT = 0.85;        // cuánto se abre hacia el costado la trayectoria de salida/entrada
 const ARCO = 0.1;        // y un saltito al subir al pedestal
 const PIEZA_B = 1.3;     // "superficie" de cada pieza (misma área visual sin importar la forma)
-const ALTO_REF = 1.45, ANCHO_REF = 1.2; // pieza "típica" para encuadrar
+const ALTO_REF = 1.45; // alto de una pieza "típica" para encuadrar
 const NVENT = 11, VENT = 5; // hasta 11 piezas: todas con foto; si hay más, solo ±5 alrededor del frente
 const ARO = false;       // aro fino en el piso marcando el anillo (probado: sin aro la protagonista destaca más)
 const ZOOM_MS = 450;     // push-in al tocar la pieza (ease-out)
@@ -331,6 +341,8 @@ uniform vec4 uPalR[2];  // palabra actual (0) y la que llega (1): centro x, cent
 uniform vec4 uPalM[2];  // x: corrimiento horizontal, y: opacidad, z: desenfoque (bias)
 uniform vec4 uGlow;     // brillo cálido del pino: xy dónde, z cuánto
 uniform vec4 uFoco;     // charco de luz del foco en el piso: xy (x, z) dónde, z radio, w cuánto
+uniform vec4 uRefl;     // reflejo del pedestal en el piso: xy (x, z) centro, z radio, w alto
+uniform vec3 uPedCol;   // color del pedestal (para el reflejo)
 uniform sampler2D uCookie, uGrano;
 uniform vec3 uDL;       // dirección de la luz
 
@@ -399,14 +411,31 @@ void main(){
   else if (f < 0.40){ cl = vec3(1.0); al = 0.10 * (1.0 - (f - 0.12) / 0.28); }
   else { cl = vec3(0.0); al = 0.10 * (f - 0.40) / 0.60; }
   col = mix(col, cl, al);
-  // canto del piso contra la pared
-  float canto = 1.0 - smoothstep(1.5, 2.5, Z / max(fwidth(Z), 1e-5));
-  col = mix(col, vec3(1.0), 0.45 * canto);
+  // encuentro con la pared: sin corte duro. Rebote suave del color de la pared y una oclusión leve
+  // que se apaga en ~1,5 unidades (como un ciclorama), más un filo de luz muy tenue.
+  float hz = 1.0 - smoothstep(0.0, 1.6, Z);
+  vec3 parNow = mezcla(uParA, uParB, uParAL, uParBL, m);
+  col = mix(col, mix(col, parNow, 0.45), 0.4 * hz * hz);
+  col *= 1.0 - 0.09 * hz * hz;
+  float canto = 1.0 - smoothstep(0.5, 3.0, Z / max(fwidth(Z), 1e-5));
+  col = mix(col, vec3(1.0), 0.12 * canto);
   vec4 gr = texture2D(uGrano, vec2(X, Z) * 0.42);
   col = mix(col, gr.rgb, gr.a);
-  // charco cálido del foco alrededor del pedestal (caída suave)
+  // charco de luz del foco alrededor del pedestal (caída suave, neutro)
   float dfo = length(vec2(X - uFoco.x, P.z - uFoco.y) * vec2(1.0, 1.35)) / max(uFoco.z, 1e-3);
-  col = mix(col, min(col * vec3(1.16, 1.08, 0.96) + vec3(0.05, 0.035, 0.015), 1.0), uFoco.w * (1.0 - smoothstep(0.15, 1.0, dfo)) * 2.2);
+  col = mix(col, min(col * vec3(1.1, 1.08, 1.04) + vec3(0.035, 0.03, 0.025), 1.0), uFoco.w * (1.0 - smoothstep(0.15, 1.0, dfo)) * 2.2);
+  // piso apenas satinado: reflejo muy tenue del pedestal delante de su base (se borra con la distancia)
+  if (uRefl.w > 0.0){
+    float rx = abs(X - uRefl.x) / uRefl.z;
+    float rz = (P.z - uRefl.y) / uRefl.z;            // 0 en el centro de la base, crece hacia la cámara
+    float borde = sqrt(max(0.0, 1.0 - rx * rx));      // frente del cilindro
+    float dz = rz - borde;                            // distancia por delante de la base
+    float refl = step(rx, 1.0) * smoothstep(0.0, 0.04, dz) * (1.0 - smoothstep(0.0, uRefl.w, dz));
+    col = mix(col, uPedCol, 0.10 * refl * (0.55 + 0.45 * borde));
+    // brillo especular ancho del foco sobre la mesa satinada
+    float esp = exp(-pow((X - uRefl.x + uRefl.z * 0.6) / (uRefl.z * 2.2), 2.0)) * exp(-pow((P.z - uRefl.y - uRefl.z * 2.4) / (uRefl.z * 1.6), 2.0));
+    col += vec3(0.035) * esp;
+  }
 #else
   vec3 col = mezcla(uParA, uParB, uParAL, uParBL, m);
   // degradé de la luz de ventana (115°): luz a la izquierda, sombra a la derecha
@@ -424,8 +453,9 @@ void main(){
   float a1 = letra(1, vec2(X - uPalM[1].x, Y));
   col = mix(col, ton, a0 * uPalM[0].y);
   col = mix(col, ton, a1 * uPalM[1].y);
-  // filo oscuro de 1 px sobre el canto del piso
-  col *= 1.0 - 0.08 * (1.0 - smoothstep(0.5, 1.5, Y / max(fwidth(Y), 1e-5)));
+  // la pared también se oscurece apenas al llegar al piso (transición suave en el horizonte)
+  float hw = 1.0 - smoothstep(0.0, 1.3, Y);
+  col *= 1.0 - 0.07 * hw * hw;
 #endif
 
   // borde mojado del esmalte: un brillo fino del lado de adentro y un espesor apenas más oscuro
@@ -469,12 +499,14 @@ void main(){ vUv = uv; gl_Position = projectionMatrix * modelViewMatrix * vec4(p
 
 // La pieza: parallax por profundidad + brillo de esmalte + sombreado.
 // `tilt` mezcla el vaivén en reposo / mouse / giroscopio con el ángulo real respecto de la cámara.
-// `blur` = profundidad de campo barata (mipmaps más bajos); `luz` oscurece las del fondo;
-// `rim` = luz de recorte y foco cálido de la protagonista; `alfa` = siluetas; `sat` = saturación (anillo 0.6).
+// `blur` = profundidad de campo barata (mipmaps más bajos); `luz` baja apenas las del fondo;
+// `niebla` = perspectiva atmosférica hacia el color de la pared; `rim` = luz de recorte neutra de
+// la protagonista; `alfa` = siluetas. La textura viene con ALFA PREMULTIPLICADO (los mipmaps del
+// borde no se ensucian de negro) y la salida también (blending ONE, ONE_MINUS_SRC_ALPHA).
 const FS_PIEZA = /* glsl */ `varying vec2 vUv;
 uniform sampler2D img; uniform sampler2D dep;
 uniform vec2 tilt; uniform float px; uniform float fuerza; uniform float glow; uniform float blur;
-uniform float luz; uniform float rim; uniform float alfa; uniform float sat;
+uniform float luz; uniform float rim; uniform float alfa; uniform vec3 colNiebla; uniform float niebla;
 void main(){
   float d = texture2D(dep, vUv, blur).r;
   vec2 off = tilt * (d - 0.3) * vec2(0.032, -0.014) * fuerza;
@@ -482,24 +514,26 @@ void main(){
   vec4 c = texture2D(img, u, blur * 1.3);
   float al = c.a * alfa;
   if (al < 0.004) discard;
+  vec3 rgb = c.rgb / max(c.a, 1e-4);
   float dl = texture2D(dep, u - vec2(px, 0.0)).r;
   float dr = texture2D(dep, u + vec2(px, 0.0)).r;
   vec3 n = normalize(vec3((dl - dr) * 7.0, 0.0, 0.55));
   vec3 L = normalize(vec3(-0.35 + tilt.x * 0.9, 0.2, 0.9));
-  float spec = pow(max(dot(n, L), 0.0), 30.0) * 0.30;
-  float shade = mix(0.86, 1.04, max(dot(n, normalize(vec3(-0.4 + tilt.x * 0.5, 0.0, 1.0))), 0.0));
-  float lum = dot(c.rgb, vec3(0.299, 0.587, 0.114));
-  vec3 col = (mix(vec3(lum), c.rgb, sat) * shade + spec) * luz;
-  col *= mix(vec3(1.0), vec3(1.05, 1.01, 0.95), rim); // foco cálido
+  float spec = pow(max(dot(n, L), 0.0), 30.0) * 0.22;
+  float shade = mix(0.9, 1.03, max(dot(n, normalize(vec3(-0.4 + tilt.x * 0.5, 0.0, 1.0))), 0.0));
+  float lum = dot(rgb, vec3(0.299, 0.587, 0.114));
+  vec3 col = (rgb * shade + spec) * luz;
   col += vec3(1.0, 0.62, 0.26) * smoothstep(0.6, 0.95, lum) * glow * 0.6;
   if (rim > 0.0){
     float r = px * 2.2;
     float aL = texture2D(img, u + vec2(-r, 0.0)).a;
     float aU = texture2D(img, u + vec2(0.0, r * 1.4)).a;
     float filo = clamp(c.a - min(aL, aU), 0.0, 1.0);
-    col += vec3(1.0, 0.95, 0.88) * filo * rim * 0.42;
+    col = mix(col, vec3(1.0, 0.985, 0.96), clamp(filo * rim * 0.32, 0.0, 0.3)); // recorte suave, sin quemar
   }
-  gl_FragColor = vec4(col, al);
+  col = mix(col, colNiebla, niebla);
+  col = clamp(col, 0.0, 1.0);
+  gl_FragColor = vec4(col * al, al);
 }`;
 
 const FS_HALO = /* glsl */ `varying vec2 vUv;
@@ -577,6 +611,7 @@ function miniDe(T, bmp, flipY) {
   c.getContext("2d").drawImage(bmp, 0, 0, w, h);
   const t = new T.CanvasTexture(c);
   t.flipY = flipY;
+  t.premultiplyAlpha = true;
   t.colorSpace = T.NoColorSpace;
   t.minFilter = T.LinearMipmapLinearFilter;
   t.generateMipmaps = true;
@@ -619,6 +654,12 @@ export default function Taller(props) {
     let vivo = true;
     let cleanup = () => {};
     (async () => {
+      // la foto de la pieza del frente se pide ya, en paralelo con la carga de three.js
+      const pz0 = (pr.current.piezas || [])[modN(Math.round((pr.current.recorrido || { s: 0 }).s), Math.max(1, (pr.current.piezas || []).length))];
+      const angosto0 = (ref.current?.clientWidth || window.innerWidth) < 700;
+      const url0 = pz0 ? (angosto0 ? pz0.sd : pz0.hd) : null;
+      const pre0 = url0 ? prepararFoto(url0, angosto0 ? pz0.hd : pz0.sd) : null;
+      pre0?.catch(() => {});
       let T;
       try {
         T = await import("three");
@@ -646,16 +687,19 @@ export default function Taller(props) {
       renderer.shadowMap.autoUpdate = false;
       renderer.shadowMap.needsUpdate = true;
       renderer.outputColorSpace = T.SRGBColorSpace;
-      renderer.toneMapping = T.ACESFilmicToneMapping;
-      renderer.toneMappingExposure = 1.05;
+      // tone mapping neutro: no tiñe (con ACES la budinera crema se veía durazno). Las piezas y el
+      // set se dibujan con su color tal cual; esto solo afecta al pedestal.
+      renderer.toneMapping = T.NeutralToneMapping ?? T.AgXToneMapping;
+      renderer.toneMappingExposure = 1;
+      const anisoMax = renderer.capabilities.getMaxAnisotropy?.() || 4;
 
       const scene = new T.Scene();
       const cam = new T.PerspectiveCamera(40, 1, 0.1, 500);
       const ref0 = new T.PerspectiveCamera(40, 1, 0.1, 500); // cámara en reposo (encuadre, medidas)
 
-      const hemi = new T.HemisphereLight("#fff6ea", "#e6ded2", 1.25);
+      const hemi = new T.HemisphereLight("#fffaf3", "#e6ded2", 1.2);
       scene.add(hemi);
-      const sol = new T.DirectionalLight("#fff1dc", 2.6);
+      const sol = new T.DirectionalLight("#fff8ef", 2.4);
       sol.castShadow = true;
       sol.shadow.mapSize.set(cal.sombra, cal.sombra);
       sol.shadow.bias = -0.0004;
@@ -663,7 +707,7 @@ export default function Taller(props) {
       sol.shadow.radius = 5;
       scene.add(sol, sol.target);
       // foco cálido de caída suave, solo sobre la protagonista y su pedestal
-      const foco = new T.SpotLight("#ffd8a6", 0, 0, 0.5, 1, 2);
+      const foco = new T.SpotLight("#fff1e2", 0, 0, 0.5, 1, 2);
       scene.add(foco, foco.target);
       const punto = new T.PointLight("#ffae55", 0, 7, 2);
       scene.add(punto);
@@ -680,6 +724,7 @@ export default function Taller(props) {
         uPal0: { value: negro }, uPal1: { value: negro },
         uPalR: { value: [new T.Vector4(), new T.Vector4()] }, uPalM: { value: [new T.Vector4(), new T.Vector4()] },
         uGlow: { value: new T.Vector4() }, uFoco: { value: new T.Vector4() },
+        uRefl: { value: new T.Vector4() }, uPedCol: { value: new T.Vector3(0.93, 0.9, 0.84) },
         uCookie: { value: texCk }, uGrano: { value: texGr },
       };
       for (const n of ["Par", "Luz", "Som", "Ton", "Mes"]) for (const s of ["A", "B", "AL", "BL"]) uSet["u" + n + s] = { value: v3() };
@@ -759,8 +804,9 @@ export default function Taller(props) {
       vacioDep.needsUpdate = true;
       const st = {
         W: 0, H: 0, fov: 40, off: [0, 0], yBase: 0, refPx: 200, maxH: 300, maxW: 300, k: 2.5, HPed: 1, ppuXP: 1, ppuYP: 1, hor: 0, backTop: 0,
-        RP: RP0, ZP: RP0 + GAP_PED, ZW: RP0 + GAP_PARED, ringY: 0, zc: 0, alfa: Math.PI / 5, N: 0, vistaW: 10, vistaH: 10, zMax: 30,
-        last: 0, ema: 16.7, muestras: 0, bien: 0, modo: 0, sombraSucia: true, pausado: !!pr.current.pausado, oculto: document.hidden,
+        RP: RP0, ZP: RP0 + GAP_PED, ZW: RP0 + GAP_PARED, ringY: 0, zc: 0, alfa: Math.PI / 5, N: 0, vistaW: 10, vistaH: 10, zMax: 30, escAn: 1, pitch: PITCH,
+        last: 0, ema: 16.7, muestras: 0, bien: 0, modo: 0, sombraSucia: true, pausado: !!pr.current.pausado, oculto: document.visibilityState === "hidden",
+        ultimo: 0, dibujado: false,
         raf: 0, tiltX: 0, tiltY: 0, version: 1, zoom: pr.current.enfoque ? 1 : 0, zoomObj: pr.current.enfoque ? 1 : 0, zoom0: 0, zoomT: 0, medirPend: false,
         avisado: false, rectClave: "", fundido: 0, techo: 0, k0: Math.round(rec.s), base: null,
       };
@@ -782,26 +828,43 @@ export default function Taller(props) {
         st.version++;
         pedirCuadro();
       };
-      const cargarFoto = (pz, urgente) => {
-        if (!pz?.src) return null;
-        let e = fotos.get(pz.src);
+      // subir a la GPU cuando el hilo está libre y el anillo quieto (subir 1600 px en medio del
+      // gesto metería un tirón debajo del dedo)
+      const subirLuego = (e, url) => {
+        const intentar = () => {
+          if (!vivo || fotos.get(url) !== e || e.listo) return;
+          if (rec.moviendo) return setTimeout(intentar, 140);
+          subir(e);
+        };
+        idle(intentar, { timeout: 700 });
+      };
+      // la foto de la pieza del frente puede venir ya pedida desde el primer render (ver arriba)
+      const precargadas = new Map();
+      if (pre0) precargadas.set(url0, pre0);
+      const cargarFoto = (url, respaldo, urgente) => {
+        if (!url) return null;
+        let e = fotos.get(url);
         if (e) {
           if (urgente && !e.listo && e.tex) subir(e);
           return e;
         }
         e = { listo: false, error: false };
-        fotos.set(pz.src, e);
+        fotos.set(url, e);
         (async () => {
-          const foto = await prepararFoto(pz.src, pz.grande);
+          const pre = precargadas.get(url);
+          precargadas.delete(url);
+          const foto = await (pre || prepararFoto(url, respaldo));
           const pd = await foto.prof;
-          if (!vivo || fotos.get(pz.src) !== e) return foto.bmp.close?.();
+          if (!vivo || fotos.get(url) !== e) return foto.bmp.close?.();
           const tex = new T.Texture(foto.bmp);
           tex.flipY = foto.flipY;
           tex.colorSpace = T.NoColorSpace;
-          tex.premultiplyAlpha = false;
+          // alfa premultiplicado: el ImageBitmap del worker ya viene premultiplicado; un <img> lo
+          // premultiplica WebGL al subirlo
+          tex.premultiplyAlpha = !!foto.flipY;
           tex.minFilter = T.LinearMipmapLinearFilter;
           tex.magFilter = T.LinearFilter;
-          tex.anisotropy = 4;
+          tex.anisotropy = anisoMax;
           tex.needsUpdate = true;
           const dep = new T.DataTexture(pd.data, pd.w, pd.h, T.RedFormat, T.UnsignedByteType);
           dep.unpackAlignment = 1;
@@ -810,9 +873,8 @@ export default function Taller(props) {
           dep.generateMipmaps = true;
           dep.needsUpdate = true;
           Object.assign(e, { tex, dep, px: 1.5 / pd.w, ratio: foto.ratio || 1, cx: centroDe(foto.bmp, !foto.flipY) });
-          if (!minis.has(pz.src) && st.N > NVENT) minis.set(pz.src, { ...miniDe(T, foto.bmp, foto.flipY), cx: e.cx });
           if (urgente) subir(e);
-          else idle(() => vivo && fotos.get(pz.src) === e && subir(e), { timeout: 600 });
+          else subirLuego(e, url);
         })().catch((err) => {
           console.warn("Taller:", err);
           e.error = true;
@@ -822,12 +884,12 @@ export default function Taller(props) {
       };
       // silueta de una pieza lejana: solo la miniatura (sin profundidad ni foto grande en la GPU)
       const cargarMini = (pz) => {
-        if (!pz?.src || minis.has(pz.src)) return;
-        minis.set(pz.src, null);
-        cargarImagen(pz.src, pz.grande)
+        if (!pz?.sd || minis.has(pz.sd)) return;
+        minis.set(pz.sd, null);
+        cargarImagen(pz.sd, pz.hd)
           .then((img) => {
             if (!vivo) return;
-            minis.set(pz.src, { ...miniDe(T, img, true), cx: centroDe(img, false) });
+            minis.set(pz.sd, { ...miniDe(T, img, true), cx: centroDe(img, false) });
             st.version++;
             pedirCuadro();
           })
@@ -886,30 +948,55 @@ export default function Taller(props) {
       };
       const enVentana = (i, s, N) => N <= NVENT || Math.abs(distFrente(i, s, N)) <= VENT + 0.5;
 
-      // Precarga: fotos de las piezas cercanas al frente (las dos de al lado, urgentes), palabras ±2.
-      // Con muchas piezas se liberan las fotos lejanas y se cargan miniaturas para las siluetas.
+      // Precarga. La protagonista y las dos vecinas de cada lado van en 1600 px; las lejanas en
+      // 800. Mientras arranca, solo se pide lo del frente (la del frente y sus vecinas) para que
+      // la escena aparezca rápido; el resto llega después. En el celu la del frente entra primero
+      // en 800 (liviana) y se cambia sola a 1600 cuando la escena ya está dibujada.
+      // Las fotos que ya no hacen falta se liberan de la GPU. Palabras ±2.
       const precargar = () => {
         const piezas = pr.current.piezas || [];
         const N = piezas.length;
         if (!N) return;
         const s = rec.s, base = Math.round(s);
-        const cerca = [];
+        const angosto = st.W < 700;
+        const arrancando = !st.avisado;
         const R = N <= NVENT ? Math.ceil(N / 2) : VENT + 1;
-        for (let d = 0; d <= R; d++) for (const sg of d ? [1, -1] : [1]) cerca.push([modN(base + d * sg, N), d]);
         const quedan = new Set();
-        for (const [i, d] of cerca) {
-          cargarFoto(piezas[i], d <= 1);
-          quedan.add(piezas[i]?.src);
+        for (let d = 0; d <= R; d++) {
+          if (arrancando && d > 1) break;
+          for (const sg of d ? [1, -1] : [1]) {
+            const pz = piezas[modN(base + d * sg, N)];
+            if (!pz) continue;
+            const hd = fotos.get(pz.hd), sd = fotos.get(pz.sd);
+            if (d <= 2) {
+              const directo = !angosto && d <= 1;
+              if (directo || !arrancando) {
+                cargarFoto(pz.hd, pz.sd, directo);
+                quedan.add(pz.hd);
+              }
+              if (!hd?.listo && (angosto || sd)) {
+                cargarFoto(pz.sd, pz.hd, d <= 1);
+                quedan.add(pz.sd);
+              }
+            } else {
+              cargarFoto(pz.sd, pz.hd, false);
+              quedan.add(pz.sd);
+              if (d <= 3 && hd?.listo) quedan.add(pz.hd); // un paso de margen antes de soltar la grande
+            }
+          }
         }
         for (let d = -2; d <= 2; d++) palabraDe(modN(base + d, N), false);
-        if (N > NVENT) {
-          for (const [src, e] of fotos) {
-            if (quedan.has(src) || !e.listo) continue;
+        if (!arrancando) {
+          for (const [url, e] of fotos) {
+            if (quedan.has(url) || !e.listo) continue;
             liberarFoto(e);
-            fotos.delete(src);
+            fotos.delete(url);
+            st.version++;
           }
+        }
+        if (N > NVENT && !arrancando) {
           let n = 0;
-          for (let i = 0; i < N; i++) if (!minis.has(piezas[i]?.src)) idle(() => vivo && cargarMini(piezas[i]), { timeout: 1500 + 120 * n++ });
+          for (let i = 0; i < N; i++) if (!minis.has(piezas[i]?.sd)) idle(() => vivo && cargarMini(piezas[i]), { timeout: 1500 + 120 * n++ });
         }
         for (const [i, e] of palabras) {
           if (Math.abs(distFrente(i, s, N)) <= 2.5) continue;
@@ -924,16 +1011,22 @@ export default function Taller(props) {
       const geoHalo = new T.PlaneGeometry(1 / (1 - 2 * MX), 1 / (1 - MY));
       geoHalo.translate(0, 0.5 / (1 - MY), 0);
       const slots = [];
+      const colNiebla = { value: new T.Vector3(0.5, 0.3, 0.3) }; // compartido por todas las piezas
       const nuevoSlot = () => {
         const grupo = new T.Group();
         const uni = {
           img: { value: vacio }, dep: { value: vacioDep }, tilt: { value: new T.Vector2() },
           px: { value: 0.005 }, fuerza: { value: 1 }, glow: { value: 0 }, blur: { value: 0 },
-          luz: { value: 1 }, rim: { value: 0 }, alfa: { value: 1 }, sat: { value: 1 },
+          luz: { value: 1 }, rim: { value: 0 }, alfa: { value: 1 }, colNiebla, niebla: { value: 0 },
         };
-        const pieza = new T.Mesh(geoPieza, new T.ShaderMaterial({ uniforms: uni, vertexShader: VS, fragmentShader: FS_PIEZA, transparent: true, depthWrite: false, side: T.DoubleSide, toneMapped: false }));
+        const pieza = new T.Mesh(geoPieza, new T.ShaderMaterial({ uniforms: uni, vertexShader: VS, fragmentShader: FS_PIEZA, transparent: true, premultipliedAlpha: true, depthWrite: false, side: T.DoubleSide, toneMapped: false }));
+        // la sombra sale de la silueta de la foto (alphaTest sobre su alfa), no del rectángulo
         const matSombra = new T.MeshDepthMaterial({ depthPacking: T.RGBADepthPacking, alphaTest: 0.5, map: vacio, side: T.DoubleSide });
         pieza.customDepthMaterial = matSombra;
+        // three copia map y alphaTest DEL MATERIAL DE LA PIEZA sobre el de sombra (si no los tiene,
+        // la sombra sale rectangular): se los damos aunque el shader propio no los use
+        pieza.material.map = vacio;
+        pieza.material.alphaTest = 0.5;
         const uniHalo = { dep: uni.dep, glow: { value: 0 } };
         const halo = new T.Mesh(geoHalo, new T.ShaderMaterial({ uniforms: uniHalo, vertexShader: VS, fragmentShader: FS_HALO, transparent: true, depthWrite: false, side: T.DoubleSide, toneMapped: false }));
         halo.visible = false;
@@ -949,12 +1042,20 @@ export default function Taller(props) {
       };
 
       // Una pieza: qué textura usa (foto o miniatura) y su tamaño. Solo trabaja si algo cambió.
-      const refrescar = (sl, i, ventana, urgente) => {
+      // la mejor foto lista de la pieza (1600 si está, si no 800), sin pedir nada nuevo (eso lo
+      // decide precargar)
+      const fotoLista = (pz) => {
+        const hd = fotos.get(pz?.hd);
+        if (hd?.listo) return hd;
+        const sd = fotos.get(pz?.sd);
+        return sd?.listo ? sd : null;
+      };
+      const refrescar = (sl, i, ventana) => {
         const pz = (pr.current.piezas || [])[i];
-        const foto = ventana && pz?.src ? cargarFoto(pz, urgente) : null;
-        const mini = !foto?.listo && pz?.src ? minis.get(pz.src) : null;
-        const modo = foto?.listo ? "foto" : mini ? "sil" : "";
-        const clave = [i, pz?.src, modo, foto?.error, pz?.glow, st.version].join("|");
+        const foto = ventana && pz ? fotoLista(pz) : null;
+        const mini = !foto && pz?.sd ? minis.get(pz.sd) : null;
+        const modo = foto ? "foto" : mini ? "sil" : "";
+        const clave = [i, pz?.hd, modo, foto?.tex?.uuid, pz?.glow, st.version].join("|");
         if (clave === sl.clave) return;
         sl.clave = clave;
         sl.i = i;
@@ -979,6 +1080,7 @@ export default function Taller(props) {
         sl.uni.px.value = modo === "foto" ? foto.px : 0.01;
         sl.uniHalo.dep.value = sl.uni.dep.value;
         sl.matSombra.map = modo === "foto" ? foto.tex : vacio;
+        sl.pieza.material.map = sl.matSombra.map;
         sl.pieza.castShadow = modo === "foto";
         sl.halo.visible = sl.glow;
         sl.foto = modo === "foto" ? foto : null;
@@ -1011,7 +1113,7 @@ export default function Taller(props) {
       const camaraEn = (c, dist, off, y) => {
         c.fov = st.fov;
         c.aspect = st.W / st.H;
-        c.position.set(0, y + Math.sin(PITCH) * dist, st.ZP + Math.cos(PITCH) * dist);
+        c.position.set(0, y + Math.sin(st.pitch) * dist, st.ZP + Math.cos(st.pitch) * dist);
         c.lookAt(0, y, st.ZP);
         if (off) c.setViewOffset(st.W, st.H, off[0], off[1], st.W, st.H);
         else c.clearViewOffset();
@@ -1036,12 +1138,13 @@ export default function Taller(props) {
         off = [0, proy(ref0, 0, H, st.ZP)[1] - st.yBase];
         camaraEn(ref0, dist, off, H);
         const ry = 0, zc = 0;
+        // ext: medio diámetro aparente del anillo (la línea de las bases, en su punto más ancho)
         let ext = 0, backTop = st.N > 1 ? Infinity : st.H;
         for (let n = 0; n <= 48; n++) {
           const a = (n / 48) * Math.PI;
           const x = st.RP * Math.sin(a), z = zc + st.RP * Math.cos(a);
-          for (const yy of [ry, ry + ALTO_REF]) ext = Math.max(ext, proy(ref0, x + ANCHO_REF * 0.5, yy, z)[0] - st.W / 2);
-          if (st.N > 1 && a >= st.alfa * 0.999) backTop = Math.min(backTop, proy(ref0, x, ry + ALTO_REF, z)[1]);
+          ext = Math.max(ext, proy(ref0, x, ry, z)[0] - st.W / 2);
+          if (st.N > 1 && a >= st.alfa * 0.999) backTop = Math.min(backTop, proy(ref0, x, ry + ALTO_REF * st.escAn, z)[1]);
         }
         const lado = proy(ref0, st.RP, ry, zc)[1] - proy(ref0, st.RP, ry + ALTO_REF, zc)[1];
         return { ext, backTop, lado, k, H, off };
@@ -1070,28 +1173,34 @@ export default function Taller(props) {
         renderer.setSize(W, H, false);
         ponerPedestal();
 
-        // el anillo: el radio crece con la cantidad de piezas hasta un tope; el pedestal, delante
+        // el anillo: entre centros vecinos al menos SEP × la pieza más ancha (nunca se pisan). El
+        // radio crece con la cantidad de piezas hasta un tope; pasado el tope, las piezas del
+        // anillo se achican lo justo para mantener la separación. El pedestal va delante.
         st.alfa = (Math.PI * 2) / N;
-        st.RP = Math.min(RP_MAX, Math.max(RP0, (N * 0.75) / (Math.PI * 2)));
+        const cuerda = SEP * ANCHO_MAX;
+        const sinA = Math.sin(Math.PI / N);
+        st.RP = N > 1 ? Math.min(RP_MAX, Math.max(RP0, cuerda / (2 * sinA))) : RP0;
+        st.escAn = N > 1 ? Math.min(1, (2 * st.RP * sinA) / cuerda) : 1;
         st.ZP = st.RP + GAP_PED;
         st.ZW = st.RP + GAP_PARED;
 
         // encuadre: la protagonista grande (celu ~45-50% del alto útil, entre el logo y los textos;
-        // compu con los textos a la izquierda); el anillo detrás, con las piezas a ~40% de su tamaño
+        // compu con los textos a la izquierda) y el anillo como una elipse grande alrededor:
+        // en el celu ~1,5× el ancho de la pantalla (las de los costados quedan cortadas: mundo
+        // grande), en la compu ~80% del ancho
         const previa = !!pr.current.vista;
         const compu = W >= 900 && !previa;
         const asp = W / H;
+        st.pitch = compu ? PITCH_COMPU : PITCH;
         st.fov = Math.min(74, Math.max(30, (2 * Math.atan(Math.tan((38 * Math.PI) / 360) / asp) * 180) / Math.PI));
         st.techo = pr.current.techo ?? (W > 700 ? 0.1 * H : 0.125 * H);
-        st.yBase = previa ? 0.84 * H : compu ? 0.76 * H : Math.min(0.6 * H, H - 300);
+        st.yBase = previa ? 0.84 * H : compu ? 0.7 * H : Math.min(0.58 * H, H - 320);
         // (la proyección agranda ~12% la pieza parada: estos altos son en la base)
-        st.refPx = previa ? 0.4 * H : compu ? 0.4 * H : Math.min(0.25 * H, (st.yBase - st.techo) * 0.5);
-        st.maxH = previa ? 0.5 * H : compu ? 0.48 * H : Math.min(0.31 * H, (st.yBase - st.techo) * 0.62);
+        st.refPx = previa ? 0.4 * H : compu ? 0.46 * H : Math.min(0.25 * H, (st.yBase - st.techo) * 0.5);
+        st.maxH = previa ? 0.5 * H : compu ? 0.54 * H : Math.min(0.31 * H, (st.yBase - st.techo) * 0.62);
         st.maxW = compu ? 0.34 * W : 0.8 * W;
-        const margen = previa ? 10 : compu ? W * 0.3 : 4;
-        const dR = buscar((r) => r.lado <= RATIO_ANILLO * st.refPx);
-        const dF = buscar((r) => r.ext <= W / 2 - margen);
-        const dist = Math.max(dR, dF);
+        const medio = previa ? W * 0.46 : compu ? W * 0.4 : W * 0.75;
+        const dist = buscar((r) => r.ext <= medio);
         const r = evaluar(dist);
         st.off = r.off;
         st.backTop = r.backTop;
@@ -1125,7 +1234,10 @@ export default function Taller(props) {
         foco.angle = Math.atan((1.25 * k) / fd);
         foco.penumbra = 1;
         foco.intensity = 2.4 * fd * fd;
-        uSet.uFoco.value.set(0, st.ZP, PED_RADIO * k * 2.8, 0.28);
+        uSet.uFoco.value.set(0, st.ZP, PED_RADIO * k * 2.8, 0.22);
+        uSet.uRefl.value.set(0, st.ZP, PED_RADIO * k * (rmax > 1 ? 1.08 : 1), 0.55);
+        if (pedTipo === "torno") uSet.uPedCol.value.set(0.42, 0.4, 0.38);
+        else uSet.uPedCol.value.set(0.95, 0.92, 0.86);
         aro.geometry.dispose();
         aro.geometry = new T.RingGeometry(st.RP - 0.025, st.RP + 0.025, 192);
         aro.geometry.rotateX(-Math.PI / 2);
@@ -1152,6 +1264,9 @@ export default function Taller(props) {
         const parent = canvas.closest(".tienda, .adm-escena") || canvas.parentElement;
         parent?.style.setProperty("--apoyo", st.yBase.toFixed(1) + "px");
         parent?.style.setProperty("--horizonte", st.hor.toFixed(1) + "px");
+        // borde de abajo del pedestal en pantalla: ahí empiezan los textos en el celu
+        const rPed = PED_RADIO * k * (rmax > 1 ? 1.08 : 1);
+        parent?.style.setProperty("--base-ped", proy(ref0, 0, 0, st.ZP + rPed).at(1).toFixed(1) + "px");
         rectPal.clear();
         st.version++;
         st.sombraSucia = true;
@@ -1316,6 +1431,7 @@ export default function Taller(props) {
 
       const cuadro = (now) => {
         st.raf = 0;
+        st.ultimo = performance.now();
         if (!vivo || st.oculto) return;
         const zoomando = st.zoomObj !== st.zoom;
         if (st.pausado && !zoomando) return;
@@ -1411,14 +1527,14 @@ export default function Taller(props) {
           }
           const dF = distFrente(i, s, N);
           const ventana = enVentana(i, s, N);
-          refrescar(sl, i, ventana, Math.abs(dF) < 1.5);
+          refrescar(sl, i, ventana);
           if (!sl.modo) continue;
           const a = N > 1 ? envolver(dF * st.alfa) : 0;
           const c = (1 + Math.cos(a)) / 2; // 1 al frente del anillo, 0 al fondo
           // e: cuánto salió del anillo hacia el pedestal (1 = protagonista). Ligado al ángulo.
           const e = N > 1 ? suave(Math.max(0, 1 - Math.abs(dF))) : 1;
           const kP = kDe(sl.lay);
-          const sc = 1 + (kP - 1) * e;
+          const sc = st.escAn + (kP - st.escAn) * e;
           // lugar en el anillo → tapa del pedestal, en arco: se abre hacia su lado por el piso y sube
           // al pedestal recién en el último tramo (así a mitad de camino ninguna flota en el aire)
           const rx = st.RP * Math.sin(a), rz = st.zc + st.RP * Math.cos(a);
@@ -1438,16 +1554,18 @@ export default function Taller(props) {
           const vaiven = 0.35 + 0.65 * e;
           sl.uni.tilt.value.set(st.tiltX * vaiven + giro * 1.6, st.tiltY * vaiven);
           const foto = sl.modo === "foto";
-          // anillo: más oscuro, 40% desaturado y desenfocado; protagonista: plena, nítida, con recorte
+          // anillo: color real; perspectiva atmosférica leve hacia la pared según lo lejos que está
+          // (máx. NIEBLA al fondo), las de los costados casi nítidas y solo las del fondo con un
+          // desenfoque leve. La protagonista: plena, nítida, con luz de recorte.
           const lejos = N > NVENT ? Math.min(1, Math.max(0, (Math.abs(dF) - (VENT - 1.5)) / 1.5)) : 0;
           const luzSil = 0.3 + 0.18 * c, alfaSil = 0.4 + 0.28 * c;
-          const luzAn = 0.58 + 0.2 * c;
+          const luzAn = 0.93 + 0.07 * c;
           const luzFoto = luzAn + (luzSil - luzAn) * lejos;
-          sl.uni.luz.value = foto ? luzFoto + (1.04 - luzFoto) * e : luzSil;
+          sl.uni.luz.value = foto ? luzFoto + (1 - luzFoto) * e : luzSil;
           sl.uni.alfa.value = foto ? 1 + (alfaSil - 1) * lejos * (1 - e) : alfaSil;
-          sl.uni.sat.value = 0.6 + 0.4 * e;
+          sl.uni.niebla.value = foto ? NIEBLA * Math.pow(1 - c, 1.2) * (1 - e) : 0;
           sl.uni.rim.value = foto ? e * (1 - z * 0.5) : 0;
-          const blurAn = Math.min(1.8, Math.max(0, (1 - c) * 2.4 - 0.12)) + 0.35;
+          const blurAn = Math.max(0, 0.55 - c) * 1.5;
           sl.uni.blur.value = cal.dof ? (foto ? blurAn * (1 - e) * (1 - z) : 0.35) : 0;
           // orden de dibujo por distancia a la cámara (transparentes, sin escribir profundidad)
           const orden = 10 + 2 * Math.round(Math.max(0, 400 - camPos.distanceTo(sl.grupo.position) * 4));
@@ -1499,6 +1617,7 @@ export default function Taller(props) {
         const d = s - st.k0, sg = d >= 0 ? 1 : -1, t = Math.abs(d);
         const iA = modN(st.k0, N), iB = modN(st.k0 + sg, N);
         ponerColores(coloresDe(piezas[iA]), coloresDe(piezas[iB]));
+        colNiebla.value.copy(uSet.uParA.value).lerp(uSet.uParB.value, Math.min(1, Math.max(0, (t - 0.25) * 2)));
         uSet.uTime.value = tiempo;
         // el esmalte nace en la pared, detrás de la pieza que llega (y la sigue mientras sale del anillo)
         const slB = slots[iB];
@@ -1555,9 +1674,13 @@ export default function Taller(props) {
             parent?.style.setProperty("--pz-h", (b[3] - b[1]).toFixed(1) + "px");
           }
         }
+        // la escena ya está dibujada con la pieza del frente (y su palabra): se levanta el telón
+        // y recién ahí se pide el resto (fotos 1600 del celu, las lejanas, miniaturas)
         if (!st.avisado && slF?.foto && (palabras.get(iF)?.tex || !piezas[iF]?.palabra)) {
           st.avisado = true;
+          canvas.dataset.listo = "1";
           pr.current.onListo?.();
+          idle(() => vivo && precargar(), { timeout: 300 });
         }
       };
 
@@ -1605,12 +1728,26 @@ export default function Taller(props) {
         pedirCuadro();
       });
       const visibilidad = () => {
-        st.oculto = document.hidden;
+        st.oculto = document.visibilityState === "hidden";
         if (!st.oculto) {
           st.last = 0;
           pedirCuadro();
         }
       };
+      // Vigía: si el navegador no entrega requestAnimationFrame estando visible (hay webviews que
+      // lo frenan hasta el primer toque, o un rAF perdido al activar la pestaña), dibuja igual.
+      const vigia = setInterval(() => {
+        if (!vivo) return;
+        if (st.oculto && document.visibilityState !== "hidden") st.oculto = false;
+        if (st.oculto || (st.pausado && st.zoomObj === st.zoom)) return;
+        if (performance.now() - st.ultimo > 350) {
+          cancelAnimationFrame(st.raf);
+          st.raf = 0;
+          st.last = 0;
+          cuadro(performance.now());
+        }
+      }, 250);
+      window.addEventListener("pageshow", visibilidad);
       const perdido = (ev) => {
         ev.preventDefault();
         pr.current.onFalla?.();
@@ -1645,9 +1782,19 @@ export default function Taller(props) {
       const ro = new ResizeObserver(medir);
       ro.observe(canvas);
       pedirCuadro();
+      // la fuente de la palabra tiene un tope de espera: si no llega a tiempo se pinta con la de
+      // respaldo y se vuelve a pintar sola cuando llega
       cargarFuente().then(() => {
         if (!vivo) return;
         fuenteOk = true;
+        medir();
+      });
+      fuenteFinal().then((tarde) => {
+        if (!vivo || !tarde) return;
+        olvidarMedidas();
+        for (const e of palabras.values()) e.tex?.dispose();
+        palabras.clear();
+        rectPal.clear();
         medir();
       });
 
@@ -1657,6 +1804,8 @@ export default function Taller(props) {
         offRec();
         if (rec.tocar) delete rec.tocar;
         document.removeEventListener("visibilitychange", visibilidad);
+        window.removeEventListener("pageshow", visibilidad);
+        clearInterval(vigia);
         canvas.removeEventListener("webglcontextlost", perdido);
         for (const e of fotos.values()) liberarFoto(e);
         fotos.clear();

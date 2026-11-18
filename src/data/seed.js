@@ -1,5 +1,6 @@
-// Catálogo inicial armado a partir de las fotos del cliente.
-// Los precios marcados "provisorio" no los pasó todavía: se corrigen desde /admin.
+// Catálogo inicial armado a partir de las fotos del cliente (respaldo: el catálogo real vive en
+// Supabase y lo carga el cliente desde el panel). Precios de la lista oficial (lista-precios).
+// Los marcados "a confirmar" no figuran en la lista: se corrigen desde /admin.
 // Si Supabase no está configurado, la tienda usa este archivo tal cual.
 
 export const seedSettings = {
@@ -27,10 +28,24 @@ export const seedEnvios = [
 
 const productosBase = [
   {
+    slug: "palta",
+    name: "Palta",
+    category: "plato palta",
+    price: 45000,
+    description: "Plato con forma de palta y el logo estampado a mano. Para la picada, las tostadas del desayuno o el centro de la mesa.",
+    image_url: "/productos/palta.webp",
+    bg: "#6f7a3f",
+    table_color: "#d7b48c",
+    word: "PALTA",
+    badge: "nuevo",
+    // REVISAR: colores a definir con el cliente (por ahora solo el de la foto)
+    colors: [{ name: "Crema", hex: "#ecd59c" }],
+  },
+  {
     slug: "pino-navidad",
     name: "Pino de navidad",
     category: "deco / navidad",
-    price: 28000, // provisorio
+    price: 28000, // a confirmar (no está en la lista)
     description: "Pino de cerámica calado con luz adentro. Cuando lo prendés, los agujeritos tiran puntos de luz por toda la mesa.",
     image_url: "/productos/pino-navidad.webp",
     bg: "#6e1a22",
@@ -47,7 +62,7 @@ const productosBase = [
     slug: "taza-panzona",
     name: "Taza panzona",
     category: "taza panzona",
-    price: 15500,
+    price: 35000,
     description: "La taza redondita, de las que se agarran con las dos manos. Para el mate cocido de la tarde o el café largo.",
     image_url: "/productos/taza-panzona.webp",
     bg: "#c46a4c",
@@ -63,7 +78,7 @@ const productosBase = [
     slug: "platillo",
     name: "Platillo Tipificado",
     category: "platillo",
-    price: 9500,
+    price: 25000,
     description: "Un infaltable para tu mesa: pequeño, versátil y con toda la identidad de la marca. Para anillos, aceitunas o la cucharita.",
     image_url: "/productos/platillo.webp",
     bg: "#a8cde0",
@@ -78,8 +93,8 @@ const productosBase = [
   {
     slug: "portamacetas-rayado",
     name: "Portamacetas rayado",
-    category: "portamacetas / maceta para plantas acuáticas",
-    price: 18000,
+    category: "medio tubo · hielera / maceta",
+    price: 45000,
     description: "Portamacetas con rayas verticales pintadas a mano. También sirve como maceta para plantas acuáticas.",
     image_url: "/productos/portamacetas-rayado.webp",
     bg: "#8c9aae",
@@ -95,7 +110,7 @@ const productosBase = [
     slug: "budinera",
     name: "Budinera de cerámica",
     category: "budinera",
-    price: 32000,
+    price: 32000, // a confirmar (no está en la lista)
     description: "Budinera rectangular con trazos pintados a mano. Va al horno y después a la mesa, sin pasar por la fuente.",
     image_url: "/productos/budinera.webp",
     bg: "#b4a3c8",
@@ -111,7 +126,7 @@ const productosBase = [
     slug: "taza-clasica",
     name: "Taza clásica",
     category: "taza clásica",
-    price: 15500, // provisorio
+    price: 15500, // a confirmar (no está en la lista)
     description: "La de todos los días. Recta, cómoda y con el logo estampado a mano.",
     image_url: "/productos/taza-clasica.webp",
     bg: "#8fa595",
@@ -127,7 +142,7 @@ const productosBase = [
     slug: "pochoclera",
     name: "Pochoclera",
     category: "tu nueva pochoclera",
-    price: 22000, // provisorio
+    price: 22000, // a confirmar (no está en la lista)
     description: "Bowl alto a rayas para la noche de peli. Entra un paquete entero de pochoclos (y un poco más).",
     image_url: "/productos/pochoclera.webp",
     bg: "#b5261d",
@@ -142,8 +157,8 @@ const productosBase = [
   {
     slug: "portamacetas-moteado",
     name: "Portamacetas moteado",
-    category: "portamacetas / maceta para plantas acuáticas",
-    price: 18000,
+    category: "medio tubo · hielera / maceta",
+    price: 45000,
     description: "Portamacetas con salpicado de esmalte, cada uno distinto al otro. También sirve como maceta para plantas acuáticas.",
     image_url: "/productos/portamacetas-moteado.webp",
     bg: "#a8907e",
@@ -159,7 +174,7 @@ const productosBase = [
     slug: "plato-hondo",
     name: "Plato hondo / cazuela",
     category: "plato hondo / cazuela",
-    price: 16000, // provisorio
+    price: 50000,
     description: "Plato hondo de borde recto, para guiso, fideos o ensalada. Aguanta microondas y lavavajillas.",
     image_url: "/productos/plato-hondo.webp",
     bg: "#9e4b3e",
@@ -175,7 +190,7 @@ const productosBase = [
     slug: "tazon",
     name: "Tazón",
     category: "tazón",
-    price: 17000, // provisorio
+    price: 40000,
     description: "Tazón bajo y ancho, para el desayuno con cereales o el café con leche bien cargado.",
     image_url: "/productos/tazon.webp",
     bg: "#9db0a0",
@@ -192,6 +207,7 @@ const productosBase = [
 // Peso (g, ya embalada) y caja (cm). ESTIMADOS: el dueño los revisa desde el panel → Piezas.
 const caja = (weight_g, height_cm, width_cm, length_cm) => ({ weight_g, height_cm, width_cm, length_cm, ship_estimado: true });
 const CAJAS = {
+  "palta": caja(700, 6, 24, 32),
   "pino-navidad": caja(1000, 28, 18, 18),
   "taza-panzona": caja(800, 15, 15, 15),
   "platillo": caja(400, 8, 15, 15),

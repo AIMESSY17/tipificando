@@ -1,4 +1,6 @@
+import { preload } from "react-dom";
 import Store from "@/components/Store";
+import { fotoChica } from "@/lib/fotos";
 import { getCatalog, modoPrueba, pagosActivos } from "@/lib/server";
 
 // El catálogo está cacheado (se renueva cada 60 s y al instante cuando el admin guarda).
@@ -44,5 +46,11 @@ export default async function Home({ searchParams }) {
   // lo mismo con el peso y las medidas de las cajas
   const publicos = products.map(({ weight_g, height_cm, width_cm, length_cm, ship_estimado, ...p }) => p); // eslint-disable-line no-unused-vars
   const inicial = Math.max(0, piezaDe(publicos, pieza));
+  // la foto de la pieza del frente empieza a bajar con el HTML (celu: 800 px; compu: 1600 px)
+  const p0 = publicos[inicial];
+  if (p0?.image_url) {
+    preload(fotoChica(p0.image_url), { as: "fetch", crossOrigin: "anonymous", fetchPriority: "high", media: "(max-width: 699.98px)" });
+    preload(p0.image_url, { as: "fetch", crossOrigin: "anonymous", fetchPriority: "high", media: "(min-width: 700px)" });
+  }
   return <Store products={publicos} settings={settings} envios={envios} inicial={inicial} modoPrueba={modoPrueba()} pagos={pagosActivos()} />;
 }

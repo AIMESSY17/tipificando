@@ -1,10 +1,12 @@
 import Form from "./Form";
+import { Logo } from "@/components/Logo";
 
 export const metadata = { title: "Botón de arrepentimiento · tipificado…|" };
 
 export default function Arrepentimiento() {
   return (
     <main className="simple">
+      <a href="/" className="simple-logo" aria-label="tipificado, inicio"><Logo /></a>
       <h1>Botón de arrepentimiento</h1>
       <p>
         Si compraste online, tenés 10 días corridos desde que recibiste la pieza para arrepentirte de la compra.

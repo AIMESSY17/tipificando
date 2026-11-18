@@ -39,8 +39,10 @@ function elWorker() {
   }
 }
 
+// credenciales "same-origin" = las del <link rel=preload crossorigin> de la página: así la foto
+// del frente que se precargó en el HTML se reutiliza en vez de bajarse dos veces
 async function bajar(src, respaldo) {
-  const r = await fetch(src, { mode: "cors", credentials: "omit" });
+  const r = await fetch(src, { mode: "cors", credentials: "same-origin" });
   if (r.ok) return r.blob();
   if (respaldo && respaldo !== src) return bajar(respaldo);
   throw new Error("No se pudo cargar " + src);
@@ -53,7 +55,14 @@ function enWorker(src, respaldo) {
     const id = ++sig;
     const conProf = !memo.has(src);
     return new Promise((ok, mal) => {
-      pendientes.set(id, { ok, mal });
+      // si el worker no contesta (navegadores que lo cargan pero no responden), se sigue en el
+      // hilo principal sin quedarse esperando
+      const tope = setTimeout(() => {
+        if (!pendientes.has(id)) return;
+        pendientes.delete(id);
+        mal(new Error("worker lento"));
+      }, 4000);
+      pendientes.set(id, { ok: (v) => (clearTimeout(tope), ok(v)), mal: (e) => (clearTimeout(tope), mal(e)) });
       wk.postMessage({ id, blob, conProf });
     }).then(({ bmp, prof }) => {
       if (prof) memo.set(src, Promise.resolve(prof));

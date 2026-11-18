@@ -2,6 +2,7 @@ import ClearCart from "./ClearCart";
 import { adminDb } from "@/lib/server";
 import { procesarPago, esUuid } from "@/lib/pagos";
 import { numPedido } from "@/lib/precios";
+import { Logo } from "@/components/Logo";
 
 export const metadata = { title: "¡Gracias! · tipificado…|", robots: { index: false } };
 export const dynamic = "force-dynamic";
@@ -42,6 +43,7 @@ export default async function Gracias({ searchParams }) {
   const [t, d] = TXT[estado];
   return (
     <main className="simple">
+      <a href="/" className="simple-logo" aria-label="tipificado, inicio"><Logo /></a>
       {estado === "aprobado" && <ClearCart />}
       {o?.number && <p className="nota">Pedido {numPedido(o.number)}</p>}
       <h1>{t}</h1>

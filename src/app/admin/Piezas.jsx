@@ -264,7 +264,7 @@ function Escenita({ p, foto, pedestalGeneral }) {
   const tipo = p.pedestal || pedestalGeneral || "travertino";
   const palabra = (p.word || p.name.split(/[s/]+/).sort((a, b) => b.length - a.length)[0] || "").toUpperCase();
   const piezas = useMemo(
-    () => [{ src: src || "", grande: src || "", tipo, glow: !!p.glow, palabra, pared: bg, mesa, clara: isLight(bg, 0.55) }],
+    () => [{ sd: src || "", hd: src || "", tipo, glow: !!p.glow, palabra, pared: bg, mesa, clara: isLight(bg, 0.55) }],
     [src, tipo, p.glow, palabra, bg, mesa]
   );
   return (

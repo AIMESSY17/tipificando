@@ -1,11 +1,11 @@
 // Web Worker: decodifica la foto y calcula el mapa de profundidad fuera del hilo principal.
-// Devuelve el bitmap ya invertido (listo para subir a la GPU) y la profundidad.
+// Devuelve el bitmap ya invertido y con alfa premultiplicado (listo para subir a la GPU) y la profundidad.
 import { calcularProfundidad, anchoProfundidad } from "./profundidad-calc";
 
 self.onmessage = async (e) => {
   const { id, blob, conProf } = e.data;
   try {
-    const bmp = await createImageBitmap(blob, { imageOrientation: "flipY", premultiplyAlpha: "none", colorSpaceConversion: "none" });
+    const bmp = await createImageBitmap(blob, { imageOrientation: "flipY", premultiplyAlpha: "premultiply", colorSpaceConversion: "none" });
     let prof = null;
     if (conProf) {
       const w = anchoProfundidad(bmp.width);

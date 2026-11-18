@@ -1,8 +1,12 @@
-import "@fontsource-variable/fraunces/soft.css";
-import "@fontsource/instrument-serif/400.css";
-import "@fontsource/instrument-serif/400-italic.css";
-import "@fontsource-variable/geist/index.css";
-import "@fontsource-variable/geist-mono/index.css";
+// Tipografía de máquina de escribir, coherente con el logo (autoalojada con fontsource):
+// Courier Prime bold → palabra gigante, nombres y títulos · IBM Plex Mono → precios, botones y
+// textos (la más legible en pantalla chica) · Caveat → solo un acento manuscrito en la ficha.
+import "@fontsource/courier-prime/400.css";
+import "@fontsource/courier-prime/700.css";
+import "@fontsource/ibm-plex-mono/400.css";
+import "@fontsource/ibm-plex-mono/500.css";
+import "@fontsource/ibm-plex-mono/600.css";
+import "@fontsource-variable/caveat/index.css";
 import "./globals.css";
 
 const site = process.env.NEXT_PUBLIC_SITE_URL || "http://localhost:3000";

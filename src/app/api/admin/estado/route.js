@@ -98,7 +98,7 @@ export async function POST(req) {
   const r = await enviarMail({
     asunto: "Prueba de avisos · tipificado",
     texto: "Si te llegó este mail, los avisos de pedidos pagados están funcionando.",
-    html: "<p style=\"font-family:system-ui,sans-serif\">Si te llegó este mail, los avisos de pedidos pagados están funcionando. ✓</p>",
+    html: "<p style=\"font-family:'IBM Plex Mono',ui-monospace,Menlo,Consolas,'Courier New',monospace\">Si te llegó este mail, los avisos de pedidos pagados están funcionando. ✓</p>",
   }).catch((e) => ({ ok: false, motivo: e.message }));
   if (!r.ok) return NextResponse.json({ error: "No salió el mail: " + r.motivo }, { status: 502 });
   return NextResponse.json({ ok: true });

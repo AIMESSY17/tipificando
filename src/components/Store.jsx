@@ -2,10 +2,11 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { EscenaAuto } from "./Escena";
 import { Loader } from "./Effects";
+import { Logo } from "./Logo";
 import { money, isLight, orderText, vivo } from "@/lib/format";
 import { precioDe, enOferta, primerColorLibre, nombreEnvio, detalleEnvio, costoEnvio, copiaEnvio, normalizarCodigo } from "@/lib/precios";
 import { PROVINCIAS, MODALIDADES, normalizarCp } from "@/lib/envio";
-import { fotoChica, usarChica } from "@/lib/fotos";
+import { fotoChica } from "@/lib/fotos";
 import { pedirGiroscopio } from "@/lib/inclinacion";
 import { Recorrido, modN } from "@/lib/recorrido";
 
@@ -59,8 +60,6 @@ export default function Store({ products, settings, envios = [], inicial = 0, mo
   const [cart, setCart] = useState([]);
   const [toast, setToast] = useState(null);
   const [sin3d, setSin3d] = useState(false);
-  // Celular → fotos de 800. Solo lo usa el 3D (no se pinta en el HTML del servidor).
-  const [chica] = useState(() => usarChica());
   const cartBtn = useRef(null);
   const drag = useRef(null);
   const rueda = useRef({ x: 0, t: 0, timer: 0, activa: false, ult: 0 });
@@ -107,26 +106,30 @@ export default function Store({ products, settings, envios = [], inicial = 0, mo
     } catch {}
   }, [cart]);
 
-  // Telón: se levanta cuando la pieza de adelante ya se ve (las demás siguen cargando atrás)
+  // Telón: tapa todo (también los textos) hasta que la escena ya está DIBUJADA con la pieza del
+  // frente; nunca se ve la UI sobre la pared vacía. El tope largo es solo un seguro.
   const t0 = useRef(0);
   useEffect(() => {
     t0.current = Date.now();
-    const max = setTimeout(() => setLoading(false), 3200);
+    const max = setTimeout(() => setLoading(false), 9000);
     return () => clearTimeout(max);
   }, []);
-  const listo = () => setTimeout(() => setLoading(false), Math.max(0, 900 - (Date.now() - t0.current)));
+  const listo = () => setTimeout(() => setLoading(false), Math.max(0, 750 - (Date.now() - t0.current)));
 
-  // Lo que necesita el taller de cada pieza
+  // Lo que necesita el taller de cada pieza: la foto en 800 (sd) y en 1600 (hd)
   const piezas = useMemo(() => products.map((x) => ({
-    src: chica ? fotoChica(x.image_url) : x.image_url,
-    grande: x.image_url,
+    sd: fotoChica(x.image_url),
+    hd: x.image_url,
     tipo: pedestalUrl || x.pedestal || settings.pedestal || "travertino",
     glow: !!x.glow,
     palabra: palabraDe(x),
     pared: x.bg,
     mesa: x.table_color || MESA_DEF,
     clara: isLight(x.bg, 0.55),
-  })), [products, chica, pedestalUrl, settings.pedestal]);
+  })), [products, pedestalUrl, settings.pedestal]);
+
+  // tres miniaturas para el botón "Ver las N piezas" (las nuevas primero)
+  const pila = useMemo(() => [...products].sort((a, b) => (b.badge === "nuevo") - (a.badge === "nuevo")).slice(0, 3), [products]);
 
   // =================== Ficha (con la cámara que se acerca a la pieza) ===================
   const abrirFicha = (i) => {
@@ -277,7 +280,7 @@ export default function Store({ products, settings, envios = [], inicial = 0, mo
 
   return (
     <main
-      className={"tienda " + (paredClara ? "pared-clara" : "pared-oscura") + (isLight(mesa) ? " mesa-clara" : " mesa-oscura") + (modoPrueba ? " con-franja" : "") + (sin3d ? " sin-3d" : " con-3d") + (fichaAbierta ? " con-ficha" : "")}
+      className={"tienda " + (loading ? "cargando " : "") + (paredClara ? "pared-clara" : "pared-oscura") + (isLight(mesa) ? " mesa-clara" : " mesa-oscura") + (modoPrueba ? " con-franja" : "") + (sin3d ? " sin-3d" : " con-3d") + (fichaAbierta ? " con-ficha" : "")}
       style={{ "--pared": paredViva, "--mesa": mesaViva }}
       onPointerDown={onDown}
       onPointerMove={onMove}
@@ -304,10 +307,10 @@ export default function Store({ products, settings, envios = [], inicial = 0, mo
 
       <header className="top">
         <a className="logo" href="/" aria-label="tipificado, inicio">
-          tipificado…<span className="cursor">|</span>
+          <Logo />
         </a>
         <div className="top-acciones">
-          <button className="chip-btn" onClick={() => setPanel("todo")}>Ver todo</button>
+          <button className="chip-btn" onClick={() => setPanel("todo")}>Ver todo <span className="chip-num">{N}</span></button>
           <button className="carrito-btn" ref={cartBtn} onClick={() => setPanel("carrito")} aria-label={`Carrito, ${count} piezas`}>
             <Tacita count={count} />
           </button>
@@ -331,7 +334,7 @@ export default function Store({ products, settings, envios = [], inicial = 0, mo
       <section className="info">
         <div key={p.id} className={"info-anim " + (dir < 0 ? "desde-izq" : "desde-der")}>
           <p className="categoria">{p.category}{p.badge && <span className="etiqueta">{p.badge === "ultimas" ? "Últimas" : "Nuevo"}</span>}</p>
-          <h2 className="nombre">{p.name}<span className="cursor" aria-hidden>|</span></h2>
+          <h2 className="nombre">{p.name}<span className="cursor-barra" aria-hidden /></h2>
           <div className="fila-precio">
             {enOferta(p) && <s className="precio-antes">{money(p.price)}</s>}
             <span className="precio">{money(precioDe(p))}</span>
@@ -340,7 +343,20 @@ export default function Store({ products, settings, envios = [], inicial = 0, mo
             </span>
           </div>
         </div>
-        <button className="btn-principal" onClick={() => abrirFicha(active)}>Elegir color</button>
+        <div className="acciones">
+          <button className="btn-principal" onClick={() => abrirFicha(active)}>Elegir color</button>
+          {N > 1 && (
+            <button className="btn-todo" onClick={() => setPanel("todo")}>
+              <span className="pila" aria-hidden>
+                {!loading && pila.map((x) => (
+                  <span key={x.id} style={{ "--pared": vivo(x.bg) }}><img src={fotoChica(x.image_url)} alt="" decoding="async" /></span>
+                ))}
+              </span>
+              <span>Ver las {N} piezas</span>
+              <span className="flecha" aria-hidden>→</span>
+            </button>
+          )}
+        </div>
         {!visto && <p className="pista"><span className="pista-izq">←</span> deslizá <span className="pista-der">→</span></p>}
       </section>
 
@@ -363,7 +379,7 @@ export default function Store({ products, settings, envios = [], inicial = 0, mo
         <Pagar cart={cart} settings={settings} envios={envios} vacaciones={vacaciones} pagos={pagos} onBack={() => setPanel("carrito")} onClose={() => setPanel(null)} flash={flash} />
       )}
       {panel === "todo" && (
-        <VerTodo products={products} onClose={() => setPanel(null)} onPick={(i) => { setPanel(null); rec.irAIndice(i, N); }} />
+        <VerTodo products={products} actual={active} reducido={reduced} onClose={() => setPanel(null)} onPick={(i) => { setPanel(null); rec.irAIndice(i, N); }} />
       )}
 
       {toast && <div className="toast" role="status">{toast}</div>}
@@ -396,8 +412,8 @@ function Ficha({ prod, settings, vacaciones, con3d, cerrando, onClose, onAdd }) 
           </div>
         )}
         <div className="ficha-cuerpo">
-          <p className="categoria">{prod.category}{prod.badge && <span className="etiqueta">{prod.badge === "ultimas" ? "Últimas" : "Nuevo"}</span>}</p>
-          <h3>{prod.name}</h3>
+          <p className="categoria mano">{prod.category}{prod.badge && <span className="etiqueta">{prod.badge === "ultimas" ? "Últimas" : "Nuevo"}</span>}</p>
+          <h3>{prod.name}<span className="cursor-barra" aria-hidden /></h3>
           <p className="desc">{prod.description}</p>
           <p className="ficha-precio">
             {enOferta(prod) && <s className="precio-antes">{money(prod.price)}</s>}
@@ -727,22 +743,74 @@ function Pagar({ cart, settings, envios, vacaciones, pagos, onBack, onClose, fla
 }
 
 // ---------- Ver todo ----------
-function VerTodo({ products, onClose, onPick }) {
-  const cats = ["todo", ...new Set(products.map((p) => p.category.split("/")[0].trim()))];
+// Grilla aireada (2 columnas en el celu, 3–4 en la compu): cada pieza recortada sobre su pared y su
+// mesa, nombre en máquina de escribir, precio, puntos de color y etiqueta. Al tocar una tarjeta se
+// cierra (salida corta) y la mesa gira hasta esa pieza.
+const etiquetaDe = (b) => (b === "ultimas" ? "Últimas" : b ? "Nuevo" : "");
+const catDe = (c = "") => c.split(/[/·]/)[0].trim();
+function VerTodo({ products, actual, reducido, onClose, onPick }) {
+  const cats = ["todo", ...new Set(products.map((p) => catDe(p.category)).filter(Boolean))];
   const [cat, setCat] = useState("todo");
-  const list = products.map((p, i) => ({ p, i })).filter(({ p }) => cat === "todo" || p.category.startsWith(cat));
+  const [cerrando, setCerrando] = useState(false);
+  const list = products.map((p, i) => ({ p, i })).filter(({ p }) => cat === "todo" || catDe(p.category) === cat);
+  const salir = (fn) => {
+    if (cerrando) return;
+    if (reducido) return fn();
+    setCerrando(true);
+    setTimeout(fn, 230);
+  };
+  const cerrarRef = useRef(null);
+  cerrarRef.current = () => salir(onClose);
+  useEffect(() => {
+    const k = (e) => e.key === "Escape" && cerrarRef.current();
+    window.addEventListener("keydown", k);
+    return () => window.removeEventListener("keydown", k);
+  }, []);
   return (
-    <div className="capa todo" onClick={onClose}>
-      <div className="todo-caja" onClick={(e) => e.stopPropagation()} role="dialog" aria-label="Todas las piezas">
-        <div className="hoja-head"><h3>Todas las piezas</h3><button className="cerrar" onClick={onClose} aria-label="Cerrar">×</button></div>
-        <div className="filtros">
-          {cats.map((c) => <button key={c} className={"chip" + (c === cat ? " on" : "")} onClick={() => setCat(c)}>{c}</button>)}
-        </div>
-        <div className="grilla">
+    <div className={"capa todo" + (cerrando ? " cerrando" : "")} onClick={() => salir(onClose)}>
+      <div className="todo-caja" onClick={(e) => e.stopPropagation()} role="dialog" aria-modal="true" aria-label="Todas las piezas">
+        <header className="todo-head">
+          <div>
+            <p className="todo-kicker"><Logo titila={false} /></p>
+            <h3>Todas las piezas <span className="todo-cuenta">{list.length}</span></h3>
+          </div>
+          <button className="cerrar" onClick={() => salir(onClose)} aria-label="Cerrar">×</button>
+        </header>
+        {cats.length > 2 && (
+          <div className="filtros" role="tablist" aria-label="Categorías">
+            {cats.map((c) => (
+              <button key={c} role="tab" aria-selected={c === cat} className={"chip" + (c === cat ? " on" : "")} onClick={() => setCat(c)}>{c}</button>
+            ))}
+          </div>
+        )}
+        <div className="grilla" key={cat}>
           {list.map(({ p, i }, k) => (
-            <button key={p.id} className="card" style={{ "--pared": vivo(p.bg), "--mesa": vivo(p.table_color || MESA_DEF, 1.06), "--r": `${(k % 3) - 1}deg` }} onClick={() => onPick(i)}>
-              <img src={p.image_url} alt="" loading="lazy" />
-              <span className="oscuro"><b>{p.name}</b>{money(precioDe(p))}</span>
+            <button
+              key={p.id}
+              className={"card" + (i === actual ? " actual" : "")}
+              style={{ "--pared": vivo(p.bg), "--mesa": vivo(p.table_color || MESA_DEF, 1.06), "--k": k }}
+              onClick={() => salir(() => onPick(i))}
+              aria-label={`${p.name}, ${money(precioDe(p))}`}
+            >
+              <span className="card-foto">
+                <img
+                  src={fotoChica(p.image_url)}
+                  alt=""
+                  loading={k < 6 ? "eager" : "lazy"}
+                  decoding="async"
+                  onError={(e) => { if (e.currentTarget.src !== new URL(p.image_url, location.href).href) e.currentTarget.src = p.image_url; }}
+                />
+                {p.badge && <span className="card-etiqueta">{etiquetaDe(p.badge)}</span>}
+              </span>
+              <span className="card-info">
+                <b className="card-nombre">{p.name}</b>
+                <span className="card-fila">
+                  <span className="card-precio">{enOferta(p) && <s>{money(p.price)}</s>}{money(precioDe(p))}</span>
+                  <span className="puntos-color">
+                    {(p.colors || []).slice(0, 5).map((c) => <span key={c.name} className={c.agotado ? "agotado" : ""} style={{ "--c": c.hex }} />)}
+                  </span>
+                </span>
+              </span>
             </button>
           ))}
         </div>

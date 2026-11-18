@@ -1,4 +1,5 @@
-// Fotos en dos tamaños: la de 1600 (compu) y la de 800 (celular).
+// Fotos en dos tamaños: 1600 (la protagonista y sus vecinas en la escena) y 800 (las lejanas,
+// las miniaturas y el arranque en el celular).
 // - Fotos del repo: /productos/x.webp  → /productos/800/x.webp  (las genera `npm run tamanos`)
 // - Fotos subidas desde el admin: .../x.webp → .../x-800.webp     (el admin sube las dos)
 // Si la chica no existe (fotos viejas), quien la carga vuelve a la grande.
@@ -11,14 +12,6 @@ export function fotoChica(url) {
   if (!/\.webp(\?|#|$)/.test(url)) return url;
   return url.replace(/\.webp(?=(\?|#|$))/, "-800.webp");
 }
-
-// Celular: pantalla angosta y densidad normal. Solo en el navegador.
-export function usarChica() {
-  if (typeof window === "undefined") return false;
-  return window.innerWidth < 700 && (window.devicePixelRatio || 1) <= 2;
-}
-
-export const fotoPara = (url) => (usarChica() ? fotoChica(url) : url);
 
 // Carga y decodifica una imagen (lista para pintar o subir a la GPU). Si falla, prueba la de respaldo.
 export function cargarImagen(src, respaldo) {

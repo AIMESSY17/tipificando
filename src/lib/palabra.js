@@ -1,8 +1,8 @@
 "use client";
 // =====================================================================
 //  La palabra gigante, pintada en la pared del 3D.
-//  Para que quede IDÉNTICA a la de antes (Instrument Serif itálica, minúscula, letter-spacing,
-//  cada letra en su propia caja, recorte del overflow) no se "imita": se arma el mismo HTML con
+//  Máquina de escribir en bold (Courier Prime 700, minúscula, como el logo). Para que quede
+//  IDÉNTICA al CSS (letter-spacing, cada letra en su caja, recorte) no se "imita": se arma el mismo HTML con
 //  las mismas clases (.palabra > .palabra-linea > .letra), se mide dónde cae cada letra y la línea
 //  de base, y se pinta letra por letra en un canvas con la misma fuente y el mismo rasterizador.
 //  El canvas va a la GPU como textura de un canal (cobertura); el color tono sobre tono lo pone el
@@ -10,17 +10,26 @@
 // =====================================================================
 
 const MED = 200; // tamaño de fuente para medir (px); todo se guarda en "em"
+const FUENTE = `"Courier Prime", "Courier New", monospace`;
+const ESPERA = 1500; // tope de espera de la fuente: después se pinta con la de respaldo
 const memoMedidas = new Map();
-let fuenteLista = null;
+let fuenteLista = null, fuenteReal = null, tarde = false;
 
+// Resuelve cuando la fuente cargó o pasó el tope de espera (lo primero que ocurra). No espera
+// document.fonts.ready: puede quedar colgado esperando otras fuentes de la página.
 export function cargarFuente() {
   if (!fuenteLista) {
-    fuenteLista = (document.fonts?.load ? document.fonts.load(`italic 400 ${MED}px "Instrument Serif"`, "abcdefghijklmnñopqrstuvwxyzáéíóú") : Promise.resolve())
-      .then(() => document.fonts?.ready)
-      .catch(() => {});
+    fuenteReal = (document.fonts?.load ? document.fonts.load(`700 ${MED}px "Courier Prime"`, "abcdefghijklmnñopqrstuvwxyzáéíóú") : Promise.resolve()).catch(() => {});
+    fuenteLista = Promise.race([
+      fuenteReal.then(() => false),
+      new Promise((ok) => setTimeout(() => ok(true), ESPERA)),
+    ]).then((t) => { tarde = t; });
   }
   return fuenteLista;
 }
+// Resuelve cuando la fuente cargó de verdad: true si llegó después del tope (hay que repintar)
+export const fuenteFinal = () => (cargarFuente(), fuenteReal.then(() => fuenteLista).then(() => tarde));
+export const olvidarMedidas = () => memoMedidas.clear();
 
 // Mide el layout real de la palabra (en em). Fuerza un layout chiquito, fuera de pantalla.
 export function medirPalabra(palabra) {
@@ -74,13 +83,13 @@ export function pintarPalabra(palabra, fuentePx, maxAncho = 4096) {
   x.fillStyle = "#fff";
   x.textBaseline = "alphabetic";
   x.textAlign = "left";
-  x.font = `italic 400 ${F}px "Instrument Serif", "Times New Roman", serif`;
+  x.font = `700 ${F}px ${FUENTE}`;
   const sx = c.width / (m.w * F), sy = c.height / (m.h * F);
   x.scale(sx, sy);
   for (const l of m.letras) x.fillText(l.t.toLocaleLowerCase("es"), l.x * F, m.base * F);
   return { canvas: c, m };
 }
 
-// Tamaño de la letra en px de pantalla: el mismo de antes
-// (min(94vw / (letras × 0.46), 30dvh, 340px), con un mínimo de 4 letras)
-export const tamPalabra = (palabra, W, H) => Math.min((0.94 * W) / (Math.max([...palabra].length, 4) * 0.46), 0.3 * H, 340);
+// Tamaño de la letra en px de pantalla: que entre entera en el 94% del ancho (cada letra de la
+// máquina de escribir mide ~0.56 em con el espaciado), máx. 30% del alto y 340 px
+export const tamPalabra = (palabra, W, H) => Math.min((0.94 * W) / (Math.max([...palabra].length, 4) * 0.56 + 0.3), 0.3 * H, 340);

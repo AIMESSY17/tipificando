@@ -1,21 +1,56 @@
 # tipificado…| — tienda de cerámica
 
-Tienda online para **@tipificado_** en formato "Reels de estudio": la pieza activa está adelante y al centro, **sobre su pedestal** (travertino o cabezal de torno), grande, nítida y con un foco cálido; las demás forman un **anillo detrás**, más chicas, oscuras y desaturadas, como un telón que gira. Se pasa de pieza deslizando de costado: el anillo gira 1:1 con el dedo y la pieza que llega sale del anillo y avanza en arco hasta el pedestal mientras la anterior vuelve a su lugar (todo ligado al ángulo; al soltar, inercia y resorte a la pieza más cercana, y un flick gira varias). Cada pieza trae su propio set:
+Tienda online para **@tipificado_** en formato "Reels de estudio": la pieza activa está adelante y al centro, **sobre su pedestal** (travertino o cabezal de torno), grande, nítida y con un foco cálido; las demás forman un **anillo grande alrededor** (en el celu se sale de la pantalla por los costados; en la compu ocupa ~80% del ancho), con su color real y bien separadas, como un telón que gira. Se pasa de pieza deslizando de costado: el anillo gira 1:1 con el dedo y la pieza que llega sale del anillo y avanza en arco hasta el pedestal mientras la anterior vuelve a su lugar (todo ligado al ángulo; al soltar, inercia y resorte a la pieza más cercana, y un flick gira varias). Cada pieza trae su propio set:
 - pared y piso con colores intensos (oklch/P3) y sombras del mismo tono; al girar, un **esmalte líquido** con el color de la pieza que llega se derrama por la pared desde atrás de ella;
 - luz de ventana y sombra de planta;
 - el pedestal **3D real** con sombras de verdad;
-- una palabra gigante en Instrument Serif pintada en la pared, que se desliza y se funde con el giro;
+- una palabra gigante en máquina de escribir (Courier Prime bold) pintada en la pared, que se desliza y se funde con el giro;
 - volumen 2.5D con brillo de esmalte.
 
 También tiene carrito, cupones, opciones de envío, pago con Mercado Pago, pedido por DM y un panel de admin estilo iPhone (instalable como app) con pedidos, clientes, cupones y estadísticas.
 
-**Tipografías:** Instrument Serif (títulos y palabra gigante), Geist (textos), Geist Mono (precios y etiquetas). Fraunces queda solo para el logo.
+**Logo:** vectorizado del logo oficial (`public/marca/`): `logo-texto.svg` (la palabra, se pinta con el color del texto en la tienda, el telón y el panel, con el cursor «|» titilando aparte), `logo-claro.svg` / `logo-oscuro.svg` y sus PNG en alta (2400 px, fondo transparente) para usar en otros lados. Los mails usan `logo-oscuro.png` (necesita `NEXT_PUBLIC_SITE_URL`).
 
-**Fotos HD:** las 10 piezas se agrandaron x4 con Real-ESRGAN (gratis, corrido localmente), se recortaron con la máscara del modelo grande, se limpiaron los bordes y se igualó el tono del crudo del esmalte en todas.
+**Tipografías (máquina de escribir, autoalojadas con fontsource):** se compararon Courier Prime, Cutive, Cutive Mono, IBM Plex Mono y Special Elite contra el logo.
+- **Courier Prime bold**: palabra gigante, nombres de las piezas (con el cursor «|») y títulos. Es la más cercana al peso y las terminaciones redondeadas del logo.
+- **IBM Plex Mono**: precios, categorías, botones y textos (la más legible en pantalla chica; textos de lectura ≥ 15 px en el celu).
+- **Caveat**: un único acento manuscrito (como el «Palta» del flyer), solo en la categoría de la ficha.
+- El panel usa la sans del sistema en los formularios; el logo y los títulos van con la marca.
+
+**Fotos en la escena:** 1600 px para la protagonista y las dos vecinas de cada lado, 800 px para las lejanas (en el celu la del frente entra primero en 800 y se cambia sola a 1600). Alfa premultiplicado, mipmaps y anisotropía máxima: sin halos oscuros en el recorte. Cada pieza proyecta la sombra de su silueta. Tone mapping neutro: cada pieza se ve del color de su foto.
+
+**Fotos HD:** las 10 piezas originales se agrandaron x4 con Real-ESRGAN (gratis, corrido localmente), se recortaron con la máscara del modelo grande, se limpiaron los bordes y se igualó el tono del crudo del esmalte en todas.
 
 **Probar pedestales:** abrí `/?pedestal=torno` o `/?pedestal=travertino` para comparar. La tienda usa el pedestal general (Ajustes); el de cada pieza se ve en la vista previa del admin.
 
 **Probar con muchas piezas:** `/?demo=30` repite el catálogo hasta 30 piezas (solo con `npm run dev`, o en producción con la variable `DEMO_PIEZAS=1`; las copias no se pueden comprar).
+
+## Productos y precios
+
+El catálogo **vive en Supabase** y lo carga el cliente desde el panel: el código no pisa nada de la base. `src/data/seed.js` y `supabase/seed.sql` son solo el respaldo / catálogo inicial, ya con los precios de la lista oficial:
+
+| Pieza (slug) | Precio |
+|---|---|
+| Palta (`palta`) · **nueva** | $ 45.000 |
+| Portamacetas rayado y moteado (`portamacetas-rayado`, `portamacetas-moteado`) · categoría «medio tubo · hielera / maceta» | $ 45.000 |
+| Taza panzona (`taza-panzona`) | $ 35.000 |
+| Tazón (`tazon`) | $ 40.000 |
+| Plato hondo / cazuela (`plato-hondo`) | $ 50.000 |
+| Platillo (`platillo`) | $ 25.000 |
+
+**Precio a confirmar** (no están en la lista; quedan con el precio que tenían): Pino de navidad ($ 28.000), Budinera ($ 32.000), Pochoclera ($ 22.000), Taza clásica ($ 15.500).
+
+**Compotera ($ 25.000):** está en la lista pero todavía no hay una pieza ni foto que le corresponda. Cargala desde el panel → Piezas → + Nueva, con su foto.
+
+**Palta:** plato con forma de palta (foto recortada del flyer: `public/productos/palta.webp` y su versión de 800). Categoría «plato palta», palabra gigante «PALTA», etiqueta «Nuevo». **Revisar los colores:** por ahora tiene solo «Crema» (el de la foto). Si todavía no está en la base, correr de nuevo `supabase/seed.sql` la agrega (primera en la tienda) sin tocar nada más, o cargala desde el panel.
+
+### Actualizar los precios en la base (opcional)
+
+`supabase/actualizar-precios.sql` cambia **solo el precio** de las piezas de la lista (y la categoría de los dos medio tubo), buscándolas por slug. No toca nombres, fotos, colores, descripciones ni ofertas. Si ya cargaste los precios desde el panel, no hace falta.
+
+1. Supabase → **SQL Editor** → New query.
+2. Pegá todo el contenido de `supabase/actualizar-precios.sql` → **Run**.
+3. Revisá con `select slug, name, category, price from products order by sort;` y, si querés que la tienda se actualice al instante, guardá cualquier pieza desde el panel (si no, se renueva sola en ~60 s).
 
 ---
 

@@ -2,6 +2,9 @@
    Panel estilo iPhone: fondo #f2f2f7, listas blancas redondeadas,
    pestañas abajo en el celu y al costado en compu, hojas que suben.
    ===================================================================== */
+/* el panel usa una sans del sistema en los formularios (más cómoda para cargar datos); el logo y los
+   títulos van con la marca (máquina de escribir) */
+.adm, .adm-centro, .cpb-fondo, .cpb-centro { --f-sans: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; }
 .adm, .adm-centro, .cpb-fondo { --azul: #0a84ff; --verde: #34c759; --rojo: #ff3b30; --gris: #8e8e93; --gris2: #6c6c70; --linea: #e5e5ea; --fondo: #f2f2f7; --texto: #1c1c1e;
   min-height: 100dvh; background: var(--fondo); color: var(--texto); font-family: var(--f-sans); -webkit-tap-highlight-color: transparent; }
 .adm { padding-bottom: calc(86px + env(safe-area-inset-bottom)); }
@@ -10,15 +13,14 @@
 .mono { font-family: var(--f-mono); }
 
 .adm-centro { display: grid; place-content: center; gap: 16px; padding: 30px 22px; text-align: center; max-width: 480px; margin: 0 auto; }
-.adm-centro h1 { font-family: var(--f-display); font-weight: 400; font-size: 32px; line-height: 1.05; }
+.adm-centro h1 { font-family: var(--f-display); font-weight: 700; font-size: 32px; line-height: 1.05; }
 .adm-cargando { color: var(--gris); }
 .adm-conectar { text-align: left; }
 .adm-conectar .adm-logo, .adm-conectar h1 { text-align: center; }
 .adm-conectar ol { display: grid; gap: 8px; padding: 14px 14px 14px 34px; background: #fff; border-radius: 14px; font-size: 15px; line-height: 1.4; }
 .adm-conectar code { font-family: var(--f-mono); font-size: 12px; background: var(--fondo); padding: 1px 5px; border-radius: 5px; word-break: break-all; }
-.adm-logo { font-family: var(--f-logo); font-variation-settings: "SOFT" 100; font-weight: 700; font-size: 20px; letter-spacing: -0.02em; }
-.adm-logo i { font-style: normal; font-weight: 300; animation: titila 1s steps(1) infinite; }
-.adm-logo.grande { font-size: 36px; }
+.adm-logo { display: inline-flex; font-size: 22px; line-height: 1; }
+.adm-logo.grande { font-size: 40px; justify-content: center; }
 
 /* ---------- Botones ---------- */
 .adm-btn { display: block; width: 100%; text-align: center; padding: 13px 16px; border-radius: 13px; background: #fff; color: var(--azul); font-weight: 600; font-size: 16px;
@@ -53,7 +55,7 @@
 .adm-tabs-logo, .solo-compu { display: none !important; }
 .adm-main { padding: 0 16px; max-width: 760px; margin: 0 auto; }
 .adm-titulo { display: flex; justify-content: space-between; align-items: center; gap: 12px; margin: 20px 0 12px; padding-top: env(safe-area-inset-top); }
-.adm-titulo h2 { font-size: 32px; font-weight: 700; letter-spacing: -0.025em; }
+.adm-titulo h2 { font-family: var(--f-display); font-size: 30px; font-weight: 700; letter-spacing: -0.03em; }
 
 @media (min-width: 900px) {
   .adm { padding-bottom: 40px; padding-left: 232px; }
@@ -203,7 +205,7 @@
 .e-entregado { background: #e5e5ea; color: #3a3a3c; }
 .e-rechazado, .e-cancelado, .e-devuelto { background: #ffe0de; color: #c4271d; }
 .adm-ped-cabeza { display: flex; justify-content: space-between; align-items: center; gap: 12px; margin-bottom: 4px; }
-.adm-ped-cabeza h3 { font-size: 24px; font-weight: 700; letter-spacing: -0.02em; }
+.adm-ped-cabeza h3 { font-family: var(--f-display); font-size: 24px; font-weight: 700; letter-spacing: -0.03em; }
 .adm-ped-cabeza small { color: var(--gris); font-size: 13.5px; }
 .adm-pasos { display: grid; grid-template-columns: repeat(5, 1fr); gap: 4px; margin-bottom: 4px; }
 .adm-pasos span { position: relative; padding-top: 12px; font-size: 10.5px; text-align: center; color: var(--gris); line-height: 1.2; }
@@ -345,7 +347,7 @@
 .cpb { max-width: 720px; margin: 0 auto; background: #fff; border-radius: 6px; padding: 36px 34px; box-shadow: 0 10px 40px rgba(0, 0, 0, 0.1); }
 .cpb-cab { display: flex; justify-content: space-between; gap: 20px; padding-bottom: 20px; border-bottom: 2px solid #1c1c1e; }
 .cpb-cab p { font-size: 12.5px; color: #555; line-height: 1.5; }
-.cpb-logo { font-family: var(--f-logo); font-variation-settings: "SOFT" 100; font-weight: 700; font-size: 30px; letter-spacing: -0.02em; margin-bottom: 6px; }
+.cpb-logo { display: flex; font-size: 30px; line-height: 1; margin-bottom: 8px; }
 .cpb-logo i { font-style: normal; font-weight: 300; }
 .cpb-num { text-align: right; display: grid; align-content: start; gap: 2px; }
 .cpb-num small { font-size: 12px; color: #666; }
@@ -353,7 +355,7 @@
 .cpb-estado { justify-self: end; margin-top: 6px; font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.08em; padding: 3px 9px; border: 1.5px solid #1c1c1e; border-radius: 99px; }
 .cpb-cliente { display: grid; gap: 2px; margin: 20px 0; }
 .cpb-cliente small { font-size: 11px; text-transform: uppercase; letter-spacing: 0.1em; color: #777; }
-.cpb-cliente b { font-family: var(--f-display); font-weight: 400; font-size: 26px; }
+.cpb-cliente b { font-family: var(--f-display); font-weight: 700; font-size: 26px; }
 .cpb-tabla { width: 100%; border-collapse: collapse; font-size: 14px; }
 .cpb-tabla th { text-align: left; font-size: 11px; text-transform: uppercase; letter-spacing: 0.08em; color: #777; padding: 8px 6px; border-bottom: 1px solid #ddd; }
 .cpb-tabla td { padding: 10px 6px; border-bottom: 1px solid #eee; }

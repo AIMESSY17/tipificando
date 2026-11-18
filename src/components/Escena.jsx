@@ -61,7 +61,7 @@ export function PalabraGigante({ palabra, oscura, size: tam }) {
 }
 
 // ---------- Escenario ----------
-// piezas: [{ src, grande, tipo, glow, palabra, pared, mesa, clara }]
+// piezas: [{ sd (foto 800), hd (foto 1600), tipo, glow, palabra, pared, mesa, clara }]
 export function EscenaAuto(props) {
   const [falla, setFalla] = useState(false);
   if (falla) return <Respaldo {...props} />;
@@ -129,14 +129,14 @@ function Respaldo({ recorrido, piezas = [], vista, pedMin = 120, onListo }) {
       {pz.palabra && <PalabraGigante palabra={pz.palabra} oscura={!pz.clara} />}
       <div className="respaldo-pieza" ref={caja}>
         <Pedestal ancho={anchoPed(d.width, 0.5, pedMin)} mesa={mesa} />
-        {pz.src && (
+        {pz.sd && (
           <div className="pieza-box" style={estilo(d)}>
             <img
               className="pieza-img"
-              src={pz.src}
+              src={pz.sd}
               alt=""
               draggable={false}
-              onError={(e) => { if (pz.grande && e.currentTarget.src !== new URL(pz.grande, location.href).href) e.currentTarget.src = pz.grande; }}
+              onError={(e) => { if (pz.hd && e.currentTarget.src !== new URL(pz.hd, location.href).href) e.currentTarget.src = pz.hd; }}
             />
           </div>
         )}

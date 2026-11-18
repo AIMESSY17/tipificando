@@ -133,14 +133,14 @@ Número de seguimiento Andreani: ${tracking}
 Seguilo acá: ${link}
 
 Cualquier duda, contestá este mail o escribinos por Instagram. ¡Gracias por elegirnos!`;
-  const html = `<div style="background:#f6f0e4;padding:28px 16px;font-family:system-ui,-apple-system,'Segoe UI',sans-serif;color:#26201c">
+  const html = `<div style="background:#f6f0e4;padding:28px 16px;font-family:${MAIL_TEXTO};color:#26201c">
 <div style="max-width:480px;margin:0 auto">
-<div style="font-family:Georgia,'Times New Roman',serif;font-size:26px;letter-spacing:-0.5px;margin-bottom:18px">tipificado…<span style="opacity:.55">|</span></div>
+<div style="margin-bottom:18px">${logoMail()}</div>
 <div style="background:#fff;border-radius:18px;padding:26px 24px;line-height:1.55;font-size:15px">
-<h2 style="margin:0 0 8px;font-family:Georgia,'Times New Roman',serif;font-weight:400;font-size:24px">Tu pedido ya salió 📦</h2>
+<h2 style="margin:0 0 8px;font-family:${MAIL_TITULO};font-weight:700;font-size:24px;letter-spacing:-0.5px">Tu pedido ya salió 📦</h2>
 <p style="margin:0 0 18px;color:#6b625b">Hola${nombre ? " " + esc(nombre) : ""}, el pedido ${esc(num)} ya está en camino con Andreani.</p>
 <p style="margin:0 0 4px;font-size:12px;letter-spacing:.08em;text-transform:uppercase;color:#6b625b">Número de seguimiento</p>
-<p style="margin:0 0 20px;font-family:ui-monospace,Menlo,Consolas,monospace;font-size:20px">${esc(tracking)}</p>
+<p style="margin:0 0 20px;font-family:${MAIL_TITULO};font-weight:700;font-size:20px">${esc(tracking)}</p>
 <a href="${esc(link)}" style="display:inline-block;background:#26201c;color:#fff;padding:12px 20px;border-radius:99px;text-decoration:none;font-weight:600">Seguir mi envío</a>
 <p style="margin:22px 0 0;font-size:13px;color:#6b625b">Si el link no abre, entrá a andreani.com y pegá el número en «Seguí tu envío».</p>
 </div>
@@ -148,6 +148,15 @@ Cualquier duda, contestá este mail o escribinos por Instagram. ¡Gracias por el
 </div></div>`;
   return enviarMailA({ to: o.email, asunto: `Tu pedido ${num} ya salió 📦 · tipificado`, html, texto });
 }
+
+// Mails con la tipografía de la marca (máquina de escribir). Los clientes de mail no cargan fuentes
+// web, así que van con respaldos del sistema; el logo va como imagen si hay URL pública del sitio.
+const MAIL_TITULO = `'Courier Prime','Courier New',Courier,monospace`;
+const MAIL_TEXTO = `'IBM Plex Mono',ui-monospace,Menlo,Consolas,'Courier New',monospace`;
+const logoMail = () =>
+  sitio()
+    ? `<img src="${esc(sitio())}/marca/logo-oscuro.png" alt="tipificado…|" width="170" height="32" style="display:block;border:0;width:170px;height:auto">`
+    : `<span style="font-family:${MAIL_TITULO};font-weight:700;font-size:26px;letter-spacing:-1px">tipificado…|</span>`;
 
 const esc = (s) => String(s ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[c]);
 
@@ -174,8 +183,9 @@ async function avisarDueno(db, orderId) {
   ].filter((x) => x !== null);
   const panel = sitio() ? `${sitio()}/admin` : "";
   const texto = `¡Entró un pago! Pedido ${num}\n\n${lineas.join("\n")}${panel ? `\n\nVer en el panel: ${panel}` : ""}`;
-  const html = `<div style="font-family:system-ui,-apple-system,sans-serif;font-size:15px;line-height:1.5;color:#26201c;max-width:520px">
-<h2 style="margin:0 0 4px">🛎️ Pedido ${esc(num)} pagado</h2>
+  const html = `<div style="font-family:${MAIL_TEXTO};font-size:15px;line-height:1.5;color:#26201c;max-width:520px">
+<div style="margin-bottom:14px">${logoMail()}</div>
+<h2 style="margin:0 0 4px;font-family:${MAIL_TITULO};font-weight:700;letter-spacing:-0.5px">🛎️ Pedido ${esc(num)} pagado</h2>
 <p style="margin:0 0 16px;color:#6b625b">${esc(o.customer_name)}${o.contact ? " · " + esc(o.contact) : ""}</p>
 <p style="margin:0">${lineas.map((l) => (l === "" ? "<br>" : esc(l))).join("<br>")}</p>
 ${panel ? `<p style="margin-top:20px"><a href="${esc(panel)}" style="background:#26201c;color:#fff;padding:10px 16px;border-radius:10px;text-decoration:none">Abrir el panel</a></p>` : ""}
