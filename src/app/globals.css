@@ -105,7 +105,7 @@ img { display: block; max-width: 100%; }
 
 /* ---------- Navegación del taller: posición "03 / 10" y flechas (compu) ---------- */
 .nav-taller { position: absolute; inset: 0; z-index: 19; pointer-events: none; color: var(--ink-p); }
-.nav-num { position: absolute; right: 18px; top: calc(var(--horizonte) - 24px); font-family: var(--f-mono); font-size: 11px; letter-spacing: 0.14em;
+.nav-num { position: absolute; right: 18px; top: calc(69.5dvh + 1px); font-family: var(--f-mono); font-size: 11px; letter-spacing: 0.14em;
   color: var(--ink-p-soft); font-variant-numeric: tabular-nums; transition: color 0.15s; }
 .nav-flecha { position: absolute; top: calc(var(--apoyo) - 120px); width: 44px; height: 44px; border-radius: 50%; border: 1px solid var(--line-p);
   font-size: 17px; display: none; pointer-events: auto; color: var(--ink-p); transition: color 0.15s, border-color 0.15s, background-color 0.2s; }

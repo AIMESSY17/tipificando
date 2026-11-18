@@ -1,10 +1,10 @@
 # tipificado…| — tienda de cerámica
 
-Tienda online para **@tipificado_** en formato "Reels de estudio": cada pieza tiene su "estación" en un taller 3D continuo y se pasa deslizando de costado: la cámara hace un travelling por el pasillo siguiendo al dedo 1:1. Cada estación tiene su propio set de fotos:
-- pared y mesa con colores intensos (oklch/P3) y sombras del mismo tono;
+Tienda online para **@tipificado_** en formato "Reels de estudio": todas las piezas están paradas sobre una **mesa redonda giratoria** (como un torno o un carrusel) en un taller 3D, vista desde una cámara apenas elevada. Se pasa de pieza deslizando de costado: la mesa gira 1:1 con el dedo y, al soltar, se acomoda con inercia en la pieza más cercana (un flick gira varias). La pieza de adelante es la activa: más grande, nítida y con luz de recorte; las del fondo, más chicas, oscuras y desenfocadas. Cada pieza trae su propio set:
+- pared y piso con colores intensos (oklch/P3) y sombras del mismo tono; al girar, un **esmalte líquido** con el color de la pieza que llega se derrama por la pared desde atrás de ella;
 - luz de ventana y sombra de planta;
-- un **pedestal 3D real** (travertino o cabezal de torno de alfarero) con sombras de verdad;
-- una palabra gigante en Instrument Serif detrás;
+- la mesa **3D real** (disco de travertino con canto biselado o cabezal de torno de alfarero gigante) con sombras de verdad;
+- una palabra gigante en Instrument Serif pintada en la pared, que se desliza y se funde con el giro;
 - volumen 2.5D con brillo de esmalte.
 
 También tiene carrito, cupones, opciones de envío, pago con Mercado Pago, pedido por DM y un panel de admin estilo iPhone (instalable como app) con pedidos, clientes, cupones y estadísticas.
@@ -13,7 +13,9 @@ También tiene carrito, cupones, opciones de envío, pago con Mercado Pago, pedi
 
 **Fotos HD:** las 10 piezas se agrandaron x4 con Real-ESRGAN (gratis, corrido localmente), se recortaron con la máscara del modelo grande, se limpiaron los bordes y se igualó el tono del crudo del esmalte en todas.
 
-**Probar pedestales:** abrí `/?pedestal=torno` o `/?pedestal=travertino` para comparar. En el admin se elige el general (Ajustes) y, si querés, uno distinto para cada pieza.
+**Probar la mesa:** abrí `/?pedestal=torno` o `/?pedestal=travertino` para comparar. La mesa usa el pedestal general (Ajustes); el de cada pieza se ve en la vista previa del admin.
+
+**Probar con muchas piezas:** `/?demo=30` repite el catálogo hasta 30 piezas (solo con `npm run dev`, o en producción con la variable `DEMO_PIEZAS=1`; las copias no se pueden comprar).
 
 ---
 
@@ -181,16 +183,16 @@ El precio que ve el comprador es: **referencia de Zipnova × factor × (1 + marg
 
 | Archivo | Qué hace |
 |---|---|
-| `src/components/Taller.jsx` | **El taller: un solo WebGL (three.js) para todo el escenario.** Cada pieza tiene su estación en un pasillo apenas curvo (pedestal travertino o torno, su tramo de pared con sus colores y su palabra pintada). Cambiar de pieza ES mover la cámara: travelling lateral con un giro sutil (~5° por estación, `DELTA`). Entre estaciones, la pared y la mesa se cubren de **esmalte líquido** que nace en la pieza siguiente: mancha de borde suave con chorreadas redondeadas, mezclada en OKLab, con dither (sin bandas); su radio sale directo de la posición de la cámara, así avanza 1:1 con el dedo y al soltar a mitad se retrae con el mismo resorte. **Push-in** al tocar la pieza: 450 ms ease-out (`ZOOM_MS`), encuadrada entera en la zona que deja libre la ficha (arriba en el celu, a la izquierda en la compu). Pieza 2.5D (parallax + brillo de esmalte), sombras reales, luz de ventana y planta, haces de luz y polvo, profundidad de campo barata (mipmaps). **Calidad adaptativa** en 5 escalones (`NIVELES`): si el gesto no llega a 60 fps baja primero los efectos (polvo, rayos, desenfoque), después la sombra y recién al final la resolución, que además se aplica cuando el dedo suelta; la respuesta al dedo no se toca nunca. 30 fps en reposo y 60 con gesto, pausa con la ficha/carrito abiertos o la pestaña oculta. Escribe `--apoyo`, `--horizonte` y la caja de la pieza (`--pz-*`) |
-| `src/lib/recorrido.js` | La posición de la cámara en estaciones: arrastre 1:1, inercia + resorte al soltar, flechas/ruedita/botones con el mismo resorte, todo interrumpible. Sin bucle propio (lo avanza el cuadro de dibujo) |
+| `src/components/Taller.jsx` | **El taller: un solo WebGL (three.js) para todo el escenario.** Una mesa redonda giratoria en el centro (travertino con canto biselado o cabezal de torno gigante, según el pedestal general) con todas las piezas paradas en el borde, a ángulos iguales. La cámara queda quieta, ~20° hacia abajo (`PITCH`); cambiar de pieza ES girar la mesa. Cada pieza mira a cámara (para el efecto 2.5D) con una leve rotación hacia la tangente (máx. ~30°). La activa (adelante) se agranda (`BOOST`), tiene luz de recorte y su sombra; las del fondo se ven más chicas, oscuras y desenfocadas. **Encuadre automático** (`medir`): en el celu el círculo entero de lado a lado y la activa en el tercio inferior-medio; en la compu, más abierto con aire a los costados; siempre deja arriba lugar para la palabra (las piezas del fondo no la tapan; la activa tapa como mucho la parte de abajo). Con muchas piezas el radio crece hasta un tope (`RP_MAX`) y el círculo se **virtualiza**: hasta 11 piezas todas tienen su foto en la GPU; con más, solo ±5 alrededor del frente (`NVENT`, `VENT`) y el resto se dibuja como siluetas tenues con una miniatura de 96 px; las fotos lejanas se liberan. **Ligado al ángulo, sin animaciones después de soltar:** el esmalte líquido (nace en la pared detrás de la pieza que llega, mezclado en OKLab, con chorreadas y dither), el color del piso, la palabra (la actual se va en el sentido del giro y se funde, la nueva entra del otro lado) y, al pasar la mitad, las tintas y los textos. **Push-in** al tocar la pieza activa: 450 ms ease-out (`ZOOM_MS`), encuadrada entera en la zona que deja libre la ficha. Tocar una pieza del costado o del fondo la trae adelante por el camino más corto (`recorrido.tocar`). Sombras reales, luz de ventana y planta, haces de luz y polvo, profundidad de campo barata (mipmaps). **Calidad adaptativa** en 5 escalones (`NIVELES`): si el giro no llega a 60 fps baja primero polvo, haces y desenfoque, después la sombra y recién al final la resolución, que se aplica cuando el dedo suelta; la respuesta al dedo no se toca nunca. 30 fps en reposo y 60 con gesto, pausa con la ficha/carrito abiertos o la pestaña oculta. Escribe `--apoyo`, `--horizonte` y la caja de la pieza activa (`--pz-*`) |
+| `src/lib/recorrido.js` | El ángulo de la mesa (en piezas): arrastre 1:1, inercia + resorte al soltar, flechas/ruedita/botones/tocar con el mismo resorte, todo interrumpible. Sin bucle propio (lo avanza el cuadro de dibujo) |
 | `src/lib/palabra.js` | Mide la palabra gigante con el mismo HTML/CSS de siempre y la pinta letra por letra en una textura para la pared |
 | `src/lib/color.js` | OKLab/OKLCH en JS (los mismos `vivo()` y `color-mix` del CSS) para pasarle los colores ya calculados al shader |
-| `src/components/Escena.jsx` | Elige el taller 3D o, si no hay WebGL, un respaldo DOM simple (pared, mesa, palabra, pedestal CSS y foto) que se maneja con el mismo recorrido |
+| `src/components/Escena.jsx` | Elige el taller 3D o, si no hay WebGL, un respaldo DOM simple (pared, mesa, palabra, pedestal CSS y una pieza por vez) que se maneja con el mismo recorrido |
 | `src/components/Store.jsx` | Tienda: el gesto en vivo (dedo, mouse, ruedita y flechas con el mismo resorte; sin bloqueos, encadena), ficha, carrito, pagar, ver todo, pieza que vuela a la tacita |
 | `src/components/Effects.jsx` | Loader («tipificado...» escribiéndose) |
 | `src/lib/profundidad.js` + `profundidad.worker.js` | Decodifica cada foto y calcula su mapa de profundidad en un Web Worker (una vez por imagen) |
 | `src/lib/fotos.js` | Fotos en dos tamaños: elige la de 800 en celular y la deriva de `image_url` |
-| `src/lib/medir.js` | Tamaño y centrado por la base de cada pieza |
+| `src/lib/medir.js` | Tamaño y centrado por la base de cada pieza (respaldo sin WebGL) |
 | `src/lib/inclinacion.js` | Inclinación por mouse o giroscopio |
 | `scripts/tamanos.mjs` | `npm run tamanos`: genera `public/productos/800/` desde las fotos de 1600 (correrlo al agregar fotos al repo) |
 | `src/app/globals.css` | Todo el diseño |

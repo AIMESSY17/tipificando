@@ -46,7 +46,7 @@ export default function Store({ products, settings, envios = [], inicial = 0, mo
   const reduced = useReducedMotion();
   const N = products.length;
   const ini = inicial > 0 && inicial < N ? inicial : 0;
-  // La cámara del taller: una sola posición (en estaciones) que mueven el dedo, la ruedita, las flechas y los botones
+  // El giro de la mesa del taller: un solo ángulo (en piezas) que mueven el dedo, la ruedita, las flechas, los botones y tocar una pieza
   const [rec] = useState(() => new Recorrido(ini));
   const [active, setActive] = useState(ini);
   const [dir, setDir] = useState(1);
@@ -77,7 +77,7 @@ export default function Store({ products, settings, envios = [], inicial = 0, mo
 
   useEffect(() => { rec.reducido = reduced; }, [rec, reduced]);
 
-  // La estación más cercana a la cámara cambia al pasar la mitad del gesto: ahí cambian textos y tintas
+  // La pieza de adelante cambia al pasar la mitad del giro: ahí cambian textos y tintas
   const ultIndice = useRef(rec.indice);
   useEffect(() => rec.escuchar((tipo, r) => {
     if (tipo !== "indice" || !N) return;
@@ -107,7 +107,7 @@ export default function Store({ products, settings, envios = [], inicial = 0, mo
     } catch {}
   }, [cart]);
 
-  // Telón: se levanta cuando la primera estación ya se ve (las demás siguen cargando atrás)
+  // Telón: se levanta cuando la pieza de adelante ya se ve (las demás siguen cargando atrás)
   const t0 = useRef(0);
   useEffect(() => {
     t0.current = Date.now();
@@ -159,7 +159,7 @@ export default function Store({ products, settings, envios = [], inicial = 0, mo
     return () => window.removeEventListener("keydown", k);
   }, [rec, bloqueado]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  // Ruedita (una estación por "click") y trackpad (sigue al gesto y al final se acomoda, igual que el dedo)
+  // Ruedita (una pieza por "click") y trackpad (sigue al gesto y al final se acomoda, igual que el dedo)
   const onWheel = (e) => {
     if (bloqueado || N < 2) return;
     const r = rueda.current;
@@ -188,7 +188,7 @@ export default function Store({ products, settings, envios = [], inicial = 0, mo
     }, 110);
   };
 
-  // Deslizar: la cámara sigue al dedo 1:1 (horizontal). Agarrar frena cualquier movimiento en curso.
+  // Deslizar: la mesa gira con el dedo 1:1 (horizontal). Agarrar frena cualquier giro en curso.
   const onDown = (e) => {
     if (e.button > 0 || bloqueado || e.target.closest("button, a, input, textarea, select, .capa, .nav-taller")) return (drag.current = null);
     pedirGiroscopio();
@@ -214,7 +214,11 @@ export default function Store({ products, settings, envios = [], inicial = 0, mo
     const t = e.timeStamp || performance.now();
     if (g.eje !== "x") {
       rec.soltar(t, true);
-      if (!g.eje && !cancelado && g.enPieza && g.quieto) abrirFicha(activo.current);
+      if (g.eje || cancelado || !g.quieto) return;
+      // tocar: la pieza activa abre la ficha; una del costado o del fondo gira la mesa hasta traerla adelante
+      const tocada = rec.tocar ? rec.tocar(e.clientX, e.clientY) : g.enPieza ? activo.current : -1;
+      if (tocada === activo.current) abrirFicha(activo.current);
+      else if (tocada >= 0) rec.irAIndice(tocada, N);
       return;
     }
     rec.soltar(t, cancelado);
@@ -288,6 +292,7 @@ export default function Store({ products, settings, envios = [], inicial = 0, mo
         <EscenaAuto
           recorrido={rec}
           piezas={piezas}
+          mesa={pedestalUrl || settings.pedestal || "travertino"}
           reducido={reduced}
           pausado={fichaAbierta || !!panel}
           enfoque={fichaAbierta}

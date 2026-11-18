@@ -1,17 +1,19 @@
 // =====================================================================
-//  El recorrido de la cámara por el pasillo del taller.
-//  `s` es la posición de la cámara medida en estaciones (0 = primera pieza, 1 = segunda…).
+//  El giro de la mesa del taller.
+//  `s` es el ángulo de la mesa medido en piezas (0 = primera pieza adelante, 1 = segunda…).
 //  No tiene tope: después de la última vuelve la primera (índice = s mod N).
 //
-//  - Arrastre: s sigue al dedo 1:1 (pxPorEstacion lo calcula la escena: la distancia en pantalla
-//    entre dos pedestales).
+//  - Arrastre: s sigue al dedo 1:1 (pxPorEstacion lo calcula la escena: lo que se corre en
+//    pantalla la pieza de adelante cuando la mesa gira una pieza).
 //  - Al soltar: inercia (la velocidad del dedo proyecta hasta dónde llega) + resorte suave a la
-//    estación entera más cercana a esa proyección. Un flick rápido pasa varias.
-//  - Flechas, ruedita y botones: el mismo resorte, sumando o restando estaciones al destino.
+//    pieza entera más cercana a esa proyección. Un flick rápido gira varias.
+//  - Flechas, ruedita, botones y tocar una pieza: el mismo resorte, sumando o restando piezas al
+//    destino (irAIndice va por el camino más corto).
 //  - Todo se puede interrumpir: agarrar en medio del resorte sigue desde donde está.
+//  - La escena puede colgar `tocar(x, y)` (qué pieza hay en ese punto de la pantalla).
 //
 //  No tiene bucle propio: quien dibuja llama a paso(now) al principio de cada cuadro, así la
-//  cámara y lo que se ve salen del mismo valor de s en el mismo cuadro (cero retraso).
+//  mesa y lo que se ve salen del mismo valor de s en el mismo cuadro (cero retraso).
 // =====================================================================
 
 const K = 90;                       // rigidez del resorte (1/s²)
@@ -21,7 +23,7 @@ const TAU = 0.3;                    // cuánto "vuela" la inercia (s)
 export class Recorrido {
   constructor(s = 0) {
     this.s = s;
-    this.v = 0;             // estaciones por segundo
+    this.v = 0;             // piezas por segundo
     this.obj = s;
     this.modo = "quieto";   // quieto | arrastre | resorte
     this.pxPorEstacion = 400;
@@ -32,7 +34,7 @@ export class Recorrido {
     this.drag = null;
   }
 
-  // f(evento): "cambio" (s se movió), "indice" (la estación más cercana cambió), "quieto"
+  // f(evento): "cambio" (s se movió), "indice" (cambió la pieza de adelante), "quieto"
   escuchar(f) {
     this.subs.add(f);
     return () => this.subs.delete(f);
@@ -65,7 +67,7 @@ export class Recorrido {
     if (!g) return;
     g.muestras.push({ x, t });
     while (g.muestras.length > 2 && t - g.muestras[0].t > 90) g.muestras.shift();
-    if (this.reducido) return; // sin travelling: el cambio se decide al soltar
+    if (this.reducido) return; // sin giro: el cambio se decide al soltar
     this.setS(g.s0 - (x - g.x0) / this.pxPorEstacion);
   }
   soltar(t, cancelado = false) {
@@ -76,14 +78,14 @@ export class Recorrido {
     const a = m.find((p) => u.t - p.t <= 90) || m[0];
     // velocidad (px/ms) de los últimos 90 ms; si el dedo frenó antes de soltar, no hay inercia
     const vpx = t - u.t < 60 && u.t - a.t > 6 ? (u.x - a.x) / (u.t - a.t) : 0;
-    const v = cancelado ? 0 : (-vpx * 1000) / this.pxPorEstacion; // estaciones/s
+    const v = cancelado ? 0 : (-vpx * 1000) / this.pxPorEstacion; // piezas/s
     if (this.reducido) {
       const dx = u.x - g.x0;
       const paso = Math.abs(vpx) > 0.35 ? -Math.sign(vpx) : Math.abs(dx) > this.pxPorEstacion * 0.18 ? -Math.sign(dx) : 0;
       return this.ir(cancelado ? 0 : paso);
     }
     let destino = Math.round(this.s + v * TAU);
-    // un gesto rápido siempre avanza al menos una estación en su sentido
+    // un gesto rápido siempre avanza al menos una pieza en su sentido
     if (Math.abs(v) > 1.2 && destino === Math.round(this.s) && Math.sign(destino - this.s) !== Math.sign(v)) destino += Math.sign(v);
     this.irA(destino, v);
   }
@@ -104,7 +106,7 @@ export class Recorrido {
     this.last = 0;
     this.emitir("cambio");
   }
-  // delta estaciones desde el destino actual (encadena si ya se estaba moviendo)
+  // delta piezas desde el destino actual (encadena si ya se estaba moviendo)
   ir(delta) {
     const base = this.modo === "resorte" ? this.obj : Math.round(this.s);
     this.irA(base + delta);
