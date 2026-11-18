@@ -3,10 +3,9 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { isLight, vivo } from "@/lib/format";
 import { quitarFondo, tieneTransparencia, encuadrar } from "@/lib/recorte";
 import { analizar, PARES } from "@/lib/arte";
-import { centroBase } from "@/lib/medir";
 import { enOferta, precioDe, piezaAgotada } from "@/lib/precios";
 import { tieneMedidas } from "@/lib/envio";
-import { Ambiente, EscenaAuto, PalabraGigante, fondoPared } from "@/components/Escena";
+import { EscenaAuto } from "@/components/Escena";
 import { useAdm, useDatos, q, money, Buscador, Filtros, Titulo, Esqueleto, Vacio, ErrorCarga, Interruptor, Segmento, Hoja, mensajeError } from "./ui";
 
 // Paleta curada (la misma que usa la dirección de arte automática)
@@ -256,35 +255,22 @@ async function recortar(file, pro, session, setBusy) {
   return quitarFondo(bmp, setBusy);
 }
 
-// ---------- Vista previa: la misma escena que la tienda (mismo 3D), con una sola pieza y sin gestos ----------
+// ---------- Vista previa: la estación de la pieza en el mismo taller 3D que la tienda ----------
+// (pedestal + pared + palabra pintada, con sus colores), sin gestos.
 function Escenita({ p, foto, pedestalGeneral }) {
   const src = foto?.image_url || p.image_url;
   const bg = foto?.bg || p.bg;
   const mesa = foto?.table_color || p.table_color || MESAS[0];
-  const [info, setInfo] = useState({ a: 1, cx: 0.5 });
-  useEffect(() => {
-    if (!src) return;
-    const im = new Image();
-    im.crossOrigin = "anonymous";
-    im.onload = () => setInfo({ a: im.naturalWidth / im.naturalHeight, cx: centroBase(im) });
-    im.src = src;
-  }, [src]);
   const tipo = p.pedestal || pedestalGeneral || "travertino";
+  const palabra = (p.word || p.name.split(/[s/]+/).sort((a, b) => b.length - a.length)[0] || "").toUpperCase();
   const piezas = useMemo(
-    () => [{ src: src || "", grande: src || "", ratio: info.a, cx: info.cx, tipo, mesa, glow: !!p.glow }],
-    [src, info.a, info.cx, tipo, mesa, p.glow]
+    () => [{ src: src || "", grande: src || "", tipo, glow: !!p.glow, palabra, pared: bg, mesa, clara: isLight(bg, 0.55) }],
+    [src, tipo, p.glow, palabra, bg, mesa]
   );
-  const palabra = (p.word || p.name.split(/[\s/]+/).sort((a, b) => b.length - a.length)[0] || "").toUpperCase();
   return (
     <div className="adm-escena" style={{ "--pared": vivo(bg), "--mesa": vivo(mesa, 1.06) }}>
-      <div className="adm-esc-pared" style={{ background: fondoPared(vivo(bg)) }} />
-      <Ambiente mesa={vivo(mesa, 1.06)} calida={p.glow} />
       <div className="set">
-        {palabra && (
-          <PalabraGigante palabra={palabra} estado="entra" oscura={!isLight(bg, 0.55)}
-            size={`min(calc(100cqw / (${Math.max([...palabra].length, 4)} * 0.7)), 96px)`} />
-        )}
-        <EscenaAuto piezas={piezas} actual={0} vista={{ w: 330, h: 640 }} pedMin={70} />
+        <EscenaAuto piezas={piezas} vista={{ w: 330, h: 640 }} pedMin={70} techo={8} />
         {!src && <p className="adm-esc-vacia">Subí una foto de la pieza 📸<br />Cualquier foto: el fondo se quita solo.</p>}
       </div>
     </div>

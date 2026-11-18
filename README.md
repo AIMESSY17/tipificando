@@ -1,6 +1,6 @@
 # tipificado…| — tienda de cerámica
 
-Tienda online para **@tipificado_** en formato "Reels de estudio": cada pieza ocupa una pantalla entera y se pasa deslizando para arriba, como en TikTok. Cada pieza tiene su propio set de fotos:
+Tienda online para **@tipificado_** en formato "Reels de estudio": cada pieza tiene su "estación" en un taller 3D continuo y se pasa deslizando de costado: la cámara hace un travelling por el pasillo siguiendo al dedo 1:1. Cada estación tiene su propio set de fotos:
 - pared y mesa con colores intensos (oklch/P3) y sombras del mismo tono;
 - luz de ventana y sombra de planta;
 - un **pedestal 3D real** (travertino o cabezal de torno de alfarero) con sombras de verdad;
@@ -181,10 +181,13 @@ El precio que ve el comprador es: **referencia de Zipnova × factor × (1 + marg
 
 | Archivo | Qué hace |
 |---|---|
-| `src/components/Escena3D.jsx` | **Un solo WebGL (three.js) para todo el escenario:** pedestal (travertino o torno), sombras reales en mesa y pared, y la pieza como un plano con shader 2.5D (parallax + brillo de esmalte + sombreado) que proyecta su propia sombra. El cambio de pieza es un giro de torno de 180° (la foto se cambia cuando el plano queda de canto). El brillo del pino es un halo + boost en el shader + una luz cálida. Calidad adaptativa (si va lento: 30 fps, sombra 1024, pixelRatio 1,25), 30 fps en reposo y 60 con gesto, pausa con la ficha/carrito abiertos o la pestaña oculta. Escribe `--apoyo` y `--horizonte` |
-| `src/components/Escena.jsx` | El resto del set: pared + mesa en dos capas (persiana con transform), ambiente (ventana, planta, grano y viñeta dibujados una vez en un PNG), palabra gigante, pedestal CSS y foto plana de respaldo si no hay WebGL |
+| `src/components/Taller.jsx` | **El taller: un solo WebGL (three.js) para todo el escenario.** Cada pieza tiene su estación en un pasillo apenas curvo (pedestal travertino o torno, su tramo de pared con sus colores y su palabra pintada). Cambiar de pieza ES mover la cámara: travelling lateral con un giro sutil (~5° por estación, `DELTA`). Entre estaciones, la pared y la mesa se cubren de **esmalte líquido** que nace en la pieza siguiente: mancha de borde suave con chorreadas redondeadas, mezclada en OKLab, con dither (sin bandas); su radio sale directo de la posición de la cámara, así avanza 1:1 con el dedo y al soltar a mitad se retrae con el mismo resorte. **Push-in** al tocar la pieza: 450 ms ease-out (`ZOOM_MS`), encuadrada entera en la zona que deja libre la ficha (arriba en el celu, a la izquierda en la compu). Pieza 2.5D (parallax + brillo de esmalte), sombras reales, luz de ventana y planta, haces de luz y polvo, profundidad de campo barata (mipmaps). **Calidad adaptativa** en 5 escalones (`NIVELES`): si el gesto no llega a 60 fps baja primero los efectos (polvo, rayos, desenfoque), después la sombra y recién al final la resolución, que además se aplica cuando el dedo suelta; la respuesta al dedo no se toca nunca. 30 fps en reposo y 60 con gesto, pausa con la ficha/carrito abiertos o la pestaña oculta. Escribe `--apoyo`, `--horizonte` y la caja de la pieza (`--pz-*`) |
+| `src/lib/recorrido.js` | La posición de la cámara en estaciones: arrastre 1:1, inercia + resorte al soltar, flechas/ruedita/botones con el mismo resorte, todo interrumpible. Sin bucle propio (lo avanza el cuadro de dibujo) |
+| `src/lib/palabra.js` | Mide la palabra gigante con el mismo HTML/CSS de siempre y la pinta letra por letra en una textura para la pared |
+| `src/lib/color.js` | OKLab/OKLCH en JS (los mismos `vivo()` y `color-mix` del CSS) para pasarle los colores ya calculados al shader |
+| `src/components/Escena.jsx` | Elige el taller 3D o, si no hay WebGL, un respaldo DOM simple (pared, mesa, palabra, pedestal CSS y foto) que se maneja con el mismo recorrido |
 | `src/components/Store.jsx` | Tienda: el gesto en vivo (dedo, mouse, ruedita y flechas con el mismo resorte; sin bloqueos, encadena), ficha, carrito, pagar, ver todo, pieza que vuela a la tacita |
-| `src/components/Effects.jsx` | Nombre a máquina, contador de precio, loader |
+| `src/components/Effects.jsx` | Loader («tipificado...» escribiéndose) |
 | `src/lib/profundidad.js` + `profundidad.worker.js` | Decodifica cada foto y calcula su mapa de profundidad en un Web Worker (una vez por imagen) |
 | `src/lib/fotos.js` | Fotos en dos tamaños: elige la de 800 en celular y la deriva de `image_url` |
 | `src/lib/medir.js` | Tamaño y centrado por la base de cada pieza |
@@ -222,5 +225,5 @@ El precio que ve el comprador es: **referencia de Zipnova × factor × (1 + marg
 - [ ] Probar una compra real chica con Mercado Pago de producción (y devolverla para ver que el cupón se libera).
 - [ ] Revisar la parte legal con alguien que sepa (botón de arrepentimiento, datos fiscales/QR de ARCA, términos y condiciones).
 - [ ] Dominio propio (tipificado.com.ar en NIC.ar) → conectarlo en Vercel → actualizar `NEXT_PUBLIC_SITE_URL`, las URL de Supabase, el webhook de MP y el remitente de los mails.
-- [ ] Probar en un celular promedio de verdad. Si igual va lento, la calidad baja sola; los topes están al principio de `Escena3D.jsx` (`prMax`, tamaño de sombra).
+- [ ] Probar en un celular promedio de verdad. Si igual va lento, la calidad baja sola; los escalones están al principio de `Taller.jsx` (`NIVELES`: resolución, sombra, efectos).
 - [ ] En iPhone, el giroscopio pide permiso la primera vez que tocás la pantalla. Si no lo da, la pieza igual se mueve sola de un lado a otro.

@@ -1,20 +1,20 @@
 "use client";
-import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
-import { flushSync } from "react-dom";
-import { Fondo, Ambiente, EscenaAuto, PalabraGigante } from "./Escena";
-import { NombreTipeado, Contador, Loader } from "./Effects";
+import { useEffect, useMemo, useRef, useState } from "react";
+import { EscenaAuto } from "./Escena";
+import { Loader } from "./Effects";
 import { money, isLight, orderText, vivo } from "@/lib/format";
 import { precioDe, enOferta, primerColorLibre, nombreEnvio, detalleEnvio, costoEnvio, copiaEnvio, normalizarCodigo } from "@/lib/precios";
 import { PROVINCIAS, MODALIDADES, normalizarCp } from "@/lib/envio";
-import { centroBase, medidas, estilo } from "@/lib/medir";
-import { fotoChica, usarChica, cargarImagen } from "@/lib/fotos";
+import { fotoChica, usarChica } from "@/lib/fotos";
 import { pedirGiroscopio } from "@/lib/inclinacion";
+import { Recorrido, modN } from "@/lib/recorrido";
 
 const CART_KEY = "tipificado-carrito";
+const PISTA_KEY = "tipificado-deslizo";
 const MESA_DEF = "#e6ded2";
 const palabraDe = (p) => (p.word || p.name.split(/[\s/]+/).sort((a, b) => b.length - a.length)[0] || "").toUpperCase();
-const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
 const fechaLarga = (iso) => new Date(iso + "T12:00").toLocaleDateString("es-AR", { day: "numeric", month: "long" });
+const dos = (n) => String(n).padStart(2, "0");
 
 function useReducedMotion() {
   const [r, setR] = useState(false);
@@ -45,42 +45,54 @@ export default function Store({ products, settings, envios = [], inicial = 0, mo
   const vacaciones = settings.vacaciones?.activo ? settings.vacaciones : null;
   const reduced = useReducedMotion();
   const N = products.length;
-  const [active, setActive] = useState(() => (inicial > 0 && inicial < products.length ? inicial : 0));
+  const ini = inicial > 0 && inicial < N ? inicial : 0;
+  // La cámara del taller: una sola posición (en estaciones) que mueven el dedo, la ruedita, las flechas y los botones
+  const [rec] = useState(() => new Recorrido(ini));
+  const [active, setActive] = useState(ini);
   const [dir, setDir] = useState(1);
   const [pedestalUrl, setPedestalUrl] = useState(null); // ?pedestal=torno para comparar
-  useEffect(() => {
-    const q = new URLSearchParams(window.location.search).get("pedestal");
-    if (q === "torno" || q === "travertino") setPedestalUrl(q);
-  }, []);
-  const [visto, setVisto] = useState(false);
+  const [visto, setVisto] = useState(true);
   const [loading, setLoading] = useState(true);
   const [sheet, setSheet] = useState(null);
+  const [cerrando, setCerrando] = useState(false);
   const [panel, setPanel] = useState(null); // "carrito" | "pagar" | "todo"
   const [cart, setCart] = useState([]);
   const [toast, setToast] = useState(null);
-  const [ar, setAr] = useState({});
-  const [cx, setCx] = useState({}); // centro real de la pieza (sin el asa) para centrarla en el pedestal
-  const [vp, setVp] = useState({ w: 390, h: 800 });
+  const [sin3d, setSin3d] = useState(false);
   // Celular → fotos de 800. Solo lo usa el 3D (no se pinta en el HTML del servidor).
   const [chica] = useState(() => usarChica());
   const cartBtn = useRef(null);
-
-  // El gesto: refs para que arrastrar no cause renders
-  const escena = useRef(null);  // 3D (o respaldo): progreso(p, destino), confirmar(destino, signo)
-  const fondo = useRef(null);   // pared + mesa: preparar, progreso, confirmar
-  const palabraRef = useRef(null);
-  const activo = useRef(active); // espejo síncrono de `active`
-  const M = useRef({ p: 0, dest: -1, clave: "", v: 0, obj: 0, raf: 0, drag: null, palabraPend: false, rueda: { acc: 0, t: 0, fuego: 0, listo: true } });
+  const drag = useRef(null);
+  const rueda = useRef({ x: 0, t: 0, timer: 0, activa: false, ult: 0 });
+  const activo = useRef(active);
 
   const p = products[active] || products[0];
   const mesa = p?.table_color || MESA_DEF;
 
   useEffect(() => {
-    const r = () => setVp({ w: window.innerWidth, h: window.innerHeight });
-    r();
-    window.addEventListener("resize", r);
-    return () => window.removeEventListener("resize", r);
+    const q = new URLSearchParams(window.location.search).get("pedestal");
+    if (q === "torno" || q === "travertino") setPedestalUrl(q);
+    try { setVisto(localStorage.getItem(PISTA_KEY) === "1"); } catch { setVisto(false); }
   }, []);
+
+  useEffect(() => { rec.reducido = reduced; }, [rec, reduced]);
+
+  // La estación más cercana a la cámara cambia al pasar la mitad del gesto: ahí cambian textos y tintas
+  const ultIndice = useRef(rec.indice);
+  useEffect(() => rec.escuchar((tipo, r) => {
+    if (tipo !== "indice" || !N) return;
+    const d = r.indice >= ultIndice.current ? 1 : -1;
+    ultIndice.current = r.indice;
+    const i = modN(r.indice, N);
+    if (i === activo.current) return;
+    activo.current = i;
+    setDir(d);
+    setActive(i);
+    setVisto((v) => {
+      if (!v) try { localStorage.setItem(PISTA_KEY, "1"); } catch {}
+      return true;
+    });
+  }), [rec, N]);
 
   // Carrito guardado en el navegador
   useEffect(() => {
@@ -95,238 +107,118 @@ export default function Store({ products, settings, envios = [], inicial = 0, mo
     } catch {}
   }, [cart]);
 
-  // Precarga: medimos cada foto (para que todas se vean del mismo tamaño) + loader
+  // Telón: se levanta cuando la primera estación ya se ve (las demás siguen cargando atrás)
+  const t0 = useRef(0);
   useEffect(() => {
-    const t0 = Date.now();
-    const cargas = products.map((x, i) => new Promise((ok) => {
-      cargarImagen(chica ? fotoChica(x.image_url) : x.image_url, x.image_url)
-        .then((im) => {
-          setAr((m) => ({ ...m, [x.id]: im.naturalWidth / im.naturalHeight }));
-          setCx((m) => ({ ...m, [x.id]: centroBase(im) }));
-        })
-        .catch(() => {})
-        .finally(ok);
-      if (i > 2) ok();
-    }));
-    const max = setTimeout(() => setLoading(false), 2800);
-    Promise.all([...cargas, document.fonts?.ready]).then(() => {
-      setTimeout(() => setLoading(false), Math.max(0, 1000 - (Date.now() - t0)));
-    });
+    t0.current = Date.now();
+    const max = setTimeout(() => setLoading(false), 3200);
     return () => clearTimeout(max);
-  }, [products, chica]);
+  }, []);
+  const listo = () => setTimeout(() => setLoading(false), Math.max(0, 900 - (Date.now() - t0.current)));
 
-  // Colores ya calculados de cada pieza (pared y mesa "vivas")
-  const colores = useMemo(() => products.map((x) => ({ pared: vivo(x.bg), mesa: vivo(x.table_color || MESA_DEF, 1.06) })), [products]);
-
-  // Lo que necesita el 3D de cada pieza
+  // Lo que necesita el taller de cada pieza
   const piezas = useMemo(() => products.map((x) => ({
     src: chica ? fotoChica(x.image_url) : x.image_url,
     grande: x.image_url,
-    ratio: ar[x.id],
-    cx: cx[x.id],
     tipo: pedestalUrl || x.pedestal || settings.pedestal || "travertino",
-    mesa: x.table_color || MESA_DEF,
     glow: !!x.glow,
-  })), [products, chica, ar, cx, pedestalUrl, settings.pedestal]);
+    palabra: palabraDe(x),
+    pared: x.bg,
+    mesa: x.table_color || MESA_DEF,
+    clara: isLight(x.bg, 0.55),
+  })), [products, chica, pedestalUrl, settings.pedestal]);
+
+  // =================== Ficha (con la cámara que se acerca a la pieza) ===================
+  const abrirFicha = (i) => {
+    setCerrando(false);
+    setSheet(i);
+  };
+  const cerrarFicha = () => {
+    if (reduced) return setSheet(null);
+    setCerrando(true);
+    clearTimeout(cerrarFicha.t);
+    cerrarFicha.t = setTimeout(() => {
+      setSheet(null);
+      setCerrando(false);
+    }, 320);
+  };
+  const fichaAbierta = sheet !== null && !cerrando;
 
   // =================== El gesto ===================
-  // p va de -1 a 1: positivo = siguiente pieza (deslizar para arriba), negativo = anterior.
-  // Mueve en vivo el giro del torno, la persiana de la pared y la opacidad de la palabra.
-  const vecino = useCallback((s) => (activo.current + s + N) % N, [N]);
-
-  const aplicar = useCallback((pp, dest) => {
-    const m = M.current;
-    const clave = dest + (pp < 0 ? "-" : "+");
-    if (dest >= 0 && clave !== m.clave) {
-      m.clave = clave;
-      m.dest = dest;
-      const c = colores[dest];
-      if (c) fondo.current?.preparar(c.pared, c.mesa, pp < 0 ? -1 : 1);
-    }
-    m.p = pp;
-    escena.current?.progreso(pp, m.dest);
-    fondo.current?.progreso(pp);
-    if (palabraRef.current) palabraRef.current.style.opacity = m.palabraPend ? "0" : String(clamp(1 - Math.abs(pp) * 1.6, 0, 1));
-  }, [colores]);
-
-  const confirmar = useCallback(() => {
-    const m = M.current;
-    const dest = m.dest;
-    const s = m.p < 0 ? -1 : 1;
-    if (dest < 0) return aplicar(0, -1);
-    escena.current?.confirmar(dest, s);
-    fondo.current?.confirmar();
-    m.palabraPend = true;
-    if (palabraRef.current) palabraRef.current.style.opacity = "0";
-    m.p = 0;
-    m.dest = -1;
-    m.clave = "";
-    m.v = 0;
-    m.obj = 0;
-    activo.current = dest;
-    // la palabra gigante y el nombre a máquina se disparan acá, al confirmar
-    flushSync(() => {
-      setActive(dest);
-      setDir(s);
-      setVisto(true);
-    });
-  }, [aplicar]);
-
-  // la palabra nueva ya está en pantalla: vuelve a verse
-  useLayoutEffect(() => {
-    M.current.palabraPend = false;
-    if (palabraRef.current) palabraRef.current.style.opacity = "1";
-  }, [active]);
-
-  const terminar = useCallback((obj) => {
-    if (Math.abs(obj) === 1) confirmar();
-    else aplicar(0, M.current.dest);
-  }, [aplicar, confirmar]);
-
-  // Resorte suave hacia obj (-1, 0 o 1), con la velocidad que traía el dedo
-  const animar = useCallback((obj, v0 = 0) => {
-    const m = M.current;
-    cancelAnimationFrame(m.raf);
-    m.raf = 0;
-    m.obj = obj;
-    m.v = v0;
-    if (reduced) {
-      aplicar(obj, m.dest);
-      return terminar(obj);
-    }
-    const K = 160, C = 2 * Math.sqrt(K) * 1.02;
-    let last = performance.now();
-    const paso = (now) => {
-      const dt = Math.min(0.034, Math.max(0.001, (now - last) / 1000));
-      last = now;
-      // dos sub-pasos para que el resorte sea estable con cualquier fps
-      let pp = m.p;
-      for (let i = 0; i < 2; i++) {
-        const h = dt / 2;
-        m.v += (K * (m.obj - pp) - C * m.v) * h;
-        pp += m.v * h;
-      }
-      const llego = Math.abs(m.obj - pp) < 0.002 && Math.abs(m.v) < 0.06;
-      const paso0 = m.obj === 0 && m.p !== 0 && Math.sign(pp) !== Math.sign(m.p); // volvió y se pasó
-      const tope = Math.abs(m.obj) === 1 && Math.abs(pp) >= 1;
-      if (llego || paso0 || tope) {
-        m.raf = 0;
-        aplicar(m.obj, m.dest);
-        return terminar(m.obj);
-      }
-      aplicar(clamp(pp, -1, 1), m.dest);
-      m.raf = requestAnimationFrame(paso);
-    };
-    m.raf = requestAnimationFrame(paso);
-  }, [aplicar, terminar, reduced]);
-
-  // Si llega otro gesto en medio de una animación: la actual termina al instante y se encadena la nueva
-  const terminarYa = useCallback(() => {
-    const m = M.current;
-    if (!m.raf) return;
-    cancelAnimationFrame(m.raf);
-    m.raf = 0;
-    aplicar(m.obj, m.dest);
-    terminar(m.obj);
-  }, [aplicar, terminar]);
-
-  const irA = useCallback((i, d) => {
-    terminarYa();
-    const m = M.current;
-    if (m.drag?.eje || N < 2 || i === activo.current || i < 0 || i >= N) return;
-    const s = d < 0 ? -1 : 1;
-    aplicar(s * 0.0001, i);
-    animar(s, s * 3);
-  }, [terminarYa, aplicar, animar, N]);
-  const go = useCallback((d) => {
-    terminarYa();
-    irA(vecino(d), d);
-  }, [terminarYa, irA, vecino]);
+  const bloqueado = sheet !== null || !!panel;
 
   // Teclado
   useEffect(() => {
     const k = (e) => {
-      if (sheet !== null || panel) return;
-      if (e.key === "ArrowDown" || e.key === "ArrowRight" || e.key === "PageDown") go(1);
-      if (e.key === "ArrowUp" || e.key === "ArrowLeft" || e.key === "PageUp") go(-1);
-      if (e.key === "Enter") setSheet(activo.current);
+      if (bloqueado || e.target.closest?.("input, textarea, select")) return;
+      if (e.key === "ArrowRight" || e.key === "ArrowDown" || e.key === "PageDown") { e.preventDefault(); rec.ir(1); }
+      if (e.key === "ArrowLeft" || e.key === "ArrowUp" || e.key === "PageUp") { e.preventDefault(); rec.ir(-1); }
+      if (e.key === "Enter" && !rec.moviendo) abrirFicha(activo.current);
     };
     window.addEventListener("keydown", k);
     return () => window.removeEventListener("keydown", k);
-  }, [go, sheet, panel]);
+  }, [rec, bloqueado]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  // Ruedita / trackpad: un paso por gesto (la inercia del trackpad no dispara diez cambios)
+  // Ruedita (una estación por "click") y trackpad (sigue al gesto y al final se acomoda, igual que el dedo)
   const onWheel = (e) => {
-    if (sheet !== null || panel) return;
-    const r = M.current.rueda;
-    const now = performance.now();
-    if (now - r.t > 220) { r.acc = 0; r.listo = true; }
-    r.t = now;
-    r.acc += e.deltaY;
-    if (Math.abs(r.acc) >= 40 && (r.listo || now - r.fuego > 700)) {
-      r.listo = false;
-      r.fuego = now;
-      go(r.acc > 0 ? 1 : -1);
-      r.acc = 0;
+    if (bloqueado || N < 2) return;
+    const r = rueda.current;
+    const d = Math.abs(e.deltaX) > Math.abs(e.deltaY) ? e.deltaX : e.deltaY;
+    if (!d) return;
+    const now = e.timeStamp || performance.now();
+    const click = e.deltaMode !== 0 || (Math.abs(d) >= 60 && Math.abs(e.deltaX) < 2 && !r.activa);
+    if (click) {
+      if (now - r.ult < 90) return;
+      r.ult = now;
+      rec.ir(d > 0 ? 1 : -1);
+      return;
     }
+    if (!r.activa) {
+      r.activa = true;
+      r.x = 0;
+      rec.agarrar(0, now);
+    }
+    r.x -= d;
+    r.t = now;
+    rec.arrastrar(r.x, now);
+    clearTimeout(r.timer);
+    r.timer = setTimeout(() => {
+      r.activa = false;
+      rec.soltar(r.t + 16);
+    }, 110);
   };
 
-  // Deslizar como en Reels: el escenario sigue al dedo
+  // Deslizar: la cámara sigue al dedo 1:1 (horizontal). Agarrar frena cualquier movimiento en curso.
   const onDown = (e) => {
-    if (e.button > 0 || e.target.closest("button, a, input, textarea, select, .capa, .reel-nav")) return (M.current.drag = null);
-    terminarYa();
+    if (e.button > 0 || bloqueado || e.target.closest("button, a, input, textarea, select, .capa, .nav-taller")) return (drag.current = null);
     pedirGiroscopio();
-    M.current.drag = { x: e.clientX, y: e.clientY, id: e.pointerId, eje: null, enPieza: !!e.target.closest(".pieza-activa"), muestras: [{ d: 0, t: e.timeStamp || performance.now() }] };
+    const t = e.timeStamp || performance.now();
+    drag.current = { x: e.clientX, y: e.clientY, id: e.pointerId, eje: null, enPieza: !!e.target.closest(".pieza-activa"), quieto: !rec.moviendo };
+    rec.agarrar(e.clientX, t);
   };
   const onMove = (e) => {
-    const m = M.current, g = m.drag;
+    const g = drag.current;
     if (!g || e.pointerId !== g.id) return;
     const dx = e.clientX - g.x, dy = e.clientY - g.y;
     if (!g.eje) {
       if (Math.max(Math.abs(dx), Math.abs(dy)) < 8) return;
-      g.eje = Math.abs(dy) >= Math.abs(dx) ? "y" : "x";
+      g.eje = Math.abs(dx) >= Math.abs(dy) * 0.9 ? "x" : "y";
       try { e.currentTarget.setPointerCapture(e.pointerId); } catch {}
     }
-    if (N < 2) return;
-    const d = g.eje === "y" ? dy : dx;
-    const tam = (g.eje === "y" ? window.innerHeight : window.innerWidth) * 0.35;
-    g.tam = tam;
-    const pp = clamp(-d / tam, -1, 1);
-    const t = e.timeStamp || performance.now();
-    g.muestras.push({ d, t });
-    while (g.muestras.length > 2 && t - g.muestras[0].t > 100) g.muestras.shift();
-    aplicar(pp, vecino(pp < 0 ? -1 : 1));
+    if (g.eje === "x" && N > 1) rec.arrastrar(e.clientX, e.timeStamp || performance.now());
   };
   const onUp = (e, cancelado) => {
-    const m = M.current, g = m.drag;
+    const g = drag.current;
     if (!g || e.pointerId !== g.id) return;
-    m.drag = null;
-    if (!g.eje) {
-      if (!cancelado && g.enPieza) setSheet(activo.current);
+    drag.current = null;
+    const t = e.timeStamp || performance.now();
+    if (g.eje !== "x") {
+      rec.soltar(t, true);
+      if (!g.eje && !cancelado && g.enPieza && g.quieto) abrirFicha(activo.current);
       return;
     }
-    if (N < 2) return;
-    // velocidad de los últimos 100 ms de movimiento; si el dedo se quedó quieto antes de soltar, es 0
-    const tf = e.timeStamp || performance.now();
-    const ult = g.muestras[g.muestras.length - 1];
-    const recientes = g.muestras.filter((s) => ult.t - s.t <= 100);
-    const a = recientes[0];
-    const v = tf - ult.t < 70 && ult.t - a.t > 8 ? (ult.d - a.d) / (ult.t - a.t) : 0; // px/ms (negativo = hacia arriba = siguiente)
-    const pp = m.p;
-    let obj = 0;
-    if (!cancelado) {
-      if (Math.abs(v) > 0.5) {
-        const s = v < 0 ? 1 : -1;
-        obj = pp === 0 || Math.sign(pp) === s ? s : 0;
-      } else if (Math.abs(pp) > 0.25) obj = Math.sign(pp);
-    }
-    if (obj !== 0 && Math.sign(pp) !== obj) aplicar(obj * 0.0001, vecino(obj));
-    animar(obj, (-v * 1000) / (g.tam || window.innerHeight * 0.35));
+    rec.soltar(t, cancelado);
   };
-
-  // Tamaño de cada pieza: misma "superficie visual" sin importar la forma de la foto
-  const dims = (prod) => medidas(ar[prod.id] || 1, cx[prod.id] ?? 0.5, vp.w, vp.h);
-  const dActiva = dims(p);
 
   const count = cart.reduce((s, it) => s + it.qty, 0);
   const flash = (msg) => {
@@ -343,14 +235,15 @@ export default function Store({ products, settings, envios = [], inicial = 0, mo
       const foto = prod.colors?.find((x) => x.name === color)?.image_url || prod.image_url;
       return [...c, { key, id: prod.id, name: prod.name, color, price: precioDe(prod), image: foto, qty }];
     });
-    // La pieza vuela a la tacita
-    if (imgEl && cartBtn.current && !reduced) {
-      const a = imgEl.getBoundingClientRect();
+    // La pieza vuela a la tacita (desde la foto de la ficha o, si no hay, desde la pieza del taller)
+    const desde = imgEl || document.querySelector(".pieza-activa");
+    if (desde && cartBtn.current && !reduced) {
+      const a = desde.getBoundingClientRect();
       const b = cartBtn.current.getBoundingClientRect();
-      const ghost = imgEl.cloneNode();
+      const ghost = imgEl ? imgEl.cloneNode() : Object.assign(document.createElement("img"), { src: prod.image_url, alt: "" });
       Object.assign(ghost.style, {
         position: "fixed", left: a.left + "px", top: a.top + "px", width: a.width + "px", height: a.height + "px",
-        objectFit: "contain", zIndex: 999, pointerEvents: "none",
+        objectFit: "contain", objectPosition: "50% 100%", zIndex: 999, pointerEvents: "none",
       });
       document.body.appendChild(ghost);
       const dx = b.left + b.width / 2 - (a.left + a.width / 2);
@@ -370,17 +263,17 @@ export default function Store({ products, settings, envios = [], inicial = 0, mo
         );
       };
     }
-    setSheet(null);
+    cerrarFicha();
     flash(`Agregado: ${prod.name} · ${color}`);
   };
 
   if (!p) return <main className="vacio">Pronto hay piezas nuevas ✦</main>;
   const paredClara = isLight(p.bg, 0.55);
-  const { pared: paredViva, mesa: mesaViva } = colores[active] || colores[0];
+  const paredViva = vivo(p.bg), mesaViva = vivo(mesa, 1.06);
 
   return (
     <main
-      className={"tienda " + (paredClara ? "pared-clara" : "pared-oscura") + (isLight(mesa) ? " mesa-clara" : " mesa-oscura") + (modoPrueba ? " con-franja" : "")}
+      className={"tienda " + (paredClara ? "pared-clara" : "pared-oscura") + (isLight(mesa) ? " mesa-clara" : " mesa-oscura") + (modoPrueba ? " con-franja" : "") + (sin3d ? " sin-3d" : " con-3d") + (fichaAbierta ? " con-ficha" : "")}
       style={{ "--pared": paredViva, "--mesa": mesaViva }}
       onPointerDown={onDown}
       onPointerMove={onMove}
@@ -390,20 +283,18 @@ export default function Store({ products, settings, envios = [], inicial = 0, mo
     >
       <Loader hidden={!loading} />
       {modoPrueba && <div className="franja-prueba">Modo prueba: no se cobra de verdad</div>}
-      <Fondo control={fondo} pared={paredViva} mesa={mesaViva} />
-      <Ambiente calida={p.glow} />
 
       <section className="set" aria-live="polite">
-        <div className="palabra-caja" ref={palabraRef}>
-          <PalabraGigante
-            key={"we" + p.id}
-            palabra={palabraDe(p)}
-            estado={"entra " + (dir < 0 ? "desde-arriba" : "desde-abajo")}
-            oscura={!paredClara}
-          />
-        </div>
-        <EscenaAuto control={escena} piezas={piezas} actual={active} reducido={reduced} pausado={sheet !== null || !!panel} />
-        <div className="pieza-box pieza-activa" style={estilo(dActiva)} role="img" aria-label={p.name} />
+        <EscenaAuto
+          recorrido={rec}
+          piezas={piezas}
+          reducido={reduced}
+          pausado={fichaAbierta || !!panel}
+          enfoque={fichaAbierta}
+          onListo={listo}
+          onSinWebGL={() => setSin3d(true)}
+        />
+        <div className="pieza-activa" role="img" aria-label={p.name} />
       </section>
 
       <header className="top">
@@ -426,29 +317,26 @@ export default function Store({ products, settings, envios = [], inicial = 0, mo
         <p className="tagline">{settings.tagline}</p>
       )}
 
-      <nav className="reel-nav" aria-label="Piezas">
-        <button onClick={() => go(-1)} aria-label="Pieza anterior">↑</button>
-        <div className="reel-puntos">
-          {products.map((x, i) => (
-            <i key={x.id} className={i === active ? "on" : ""} onClick={() => irA(i, i > active ? 1 : -1)} />
-          ))}
-        </div>
-        <span className="reel-num">{String(active + 1).padStart(2, "0")}/{String(N).padStart(2, "0")}</span>
-        <button onClick={() => go(1)} aria-label="Pieza siguiente">↓</button>
+      <nav className="nav-taller" aria-label="Piezas">
+        <button className="nav-flecha izq" onClick={() => rec.ir(-1)} aria-label="Pieza anterior">←</button>
+        <span className="nav-num" aria-live="polite">{dos(active + 1)} / {dos(N)}</span>
+        <button className="nav-flecha der" onClick={() => rec.ir(1)} aria-label="Pieza siguiente">→</button>
       </nav>
 
       <section className="info">
-        <p className="categoria">{p.category}{p.badge && <span className="etiqueta">{p.badge === "ultimas" ? "Últimas" : "Nuevo"}</span>}</p>
-        <NombreTipeado text={p.name} reduced={reduced} />
-        <div className="fila-precio">
-          {enOferta(p) && <s className="precio-antes">{money(p.price)}</s>}
-          <span className="precio"><Contador value={precioDe(p)} reduced={reduced} /></span>
-          <span className="puntos-color">
-            {(p.colors || []).map((c) => <span key={c.name} className={c.agotado ? "agotado" : ""} style={{ "--c": c.hex }} title={c.name + (c.agotado ? " (agotado)" : "")} />)}
-          </span>
+        <div key={p.id} className={"info-anim " + (dir < 0 ? "desde-izq" : "desde-der")}>
+          <p className="categoria">{p.category}{p.badge && <span className="etiqueta">{p.badge === "ultimas" ? "Últimas" : "Nuevo"}</span>}</p>
+          <h2 className="nombre">{p.name}<span className="cursor" aria-hidden>|</span></h2>
+          <div className="fila-precio">
+            {enOferta(p) && <s className="precio-antes">{money(p.price)}</s>}
+            <span className="precio">{money(precioDe(p))}</span>
+            <span className="puntos-color">
+              {(p.colors || []).map((c) => <span key={c.name} className={c.agotado ? "agotado" : ""} style={{ "--c": c.hex }} title={c.name + (c.agotado ? " (agotado)" : "")} />)}
+            </span>
+          </div>
         </div>
-        <button className="btn-principal" onClick={() => setSheet(active)}>Elegir color</button>
-        {!visto && <p className="pista"><span>↑</span> deslizá para ver la próxima pieza</p>}
+        <button className="btn-principal" onClick={() => abrirFicha(active)}>Elegir color</button>
+        {!visto && <p className="pista"><span className="pista-izq">←</span> deslizá <span className="pista-der">→</span></p>}
       </section>
 
       <footer className="pie">
@@ -461,7 +349,7 @@ export default function Store({ products, settings, envios = [], inicial = 0, mo
       </footer>
 
       {sheet !== null && (
-        <Ficha prod={products[sheet]} settings={settings} vacaciones={vacaciones} onClose={() => setSheet(null)} onAdd={add} />
+        <Ficha prod={products[sheet]} settings={settings} vacaciones={vacaciones} con3d={!sin3d} cerrando={cerrando} onClose={cerrarFicha} onAdd={add} />
       )}
       {panel === "carrito" && (
         <Carrito cart={cart} setCart={setCart} vacaciones={vacaciones} onClose={() => setPanel(null)} onPay={() => setPanel("pagar")} />
@@ -470,7 +358,7 @@ export default function Store({ products, settings, envios = [], inicial = 0, mo
         <Pagar cart={cart} settings={settings} envios={envios} vacaciones={vacaciones} pagos={pagos} onBack={() => setPanel("carrito")} onClose={() => setPanel(null)} flash={flash} />
       )}
       {panel === "todo" && (
-        <VerTodo products={products} onClose={() => setPanel(null)} onPick={(i) => { setPanel(null); irA(i, i > activo.current ? 1 : -1); }} />
+        <VerTodo products={products} onClose={() => setPanel(null)} onPick={(i) => { setPanel(null); rec.irAIndice(i, N); }} />
       )}
 
       {toast && <div className="toast" role="status">{toast}</div>}
@@ -479,7 +367,9 @@ export default function Store({ products, settings, envios = [], inicial = 0, mo
 }
 
 // ---------- Ficha del producto ----------
-function Ficha({ prod, settings, vacaciones, onClose, onAdd }) {
+// Con el taller en 3D la cámara se acerca a la pieza y la ficha entra desde abajo (celu) o desde el costado
+// (compu): la foto de arriba solo aparece si el color elegido tiene foto propia.
+function Ficha({ prod, settings, vacaciones, con3d, cerrando, onClose, onAdd }) {
   const libre = primerColorLibre(prod);
   const [color, setColor] = useState(libre?.name || prod.colors?.[0]?.name || "Único");
   const [qty, setQty] = useState(1);
@@ -490,13 +380,16 @@ function Ficha({ prod, settings, vacaciones, onClose, onAdd }) {
   const fotoColor = sel?.image_url ? color : prod.colors?.[0]?.name;
   const precio = precioDe(prod);
   const agotada = prod.colors?.length > 0 && !libre;
+  const conFoto = !con3d || !!sel?.image_url;
   return (
-    <div className="capa" onClick={onClose}>
-      <div className="hoja ficha" onClick={(e) => e.stopPropagation()} role="dialog" aria-label={prod.name}>
+    <div className={"capa capa-ficha" + (con3d ? " con-3d" : "") + (cerrando ? " cerrando" : "")} onClick={onClose}>
+      <div className={"hoja ficha" + (conFoto ? "" : " sin-foto")} onClick={(e) => e.stopPropagation()} role="dialog" aria-label={prod.name}>
         <button className="cerrar" onClick={onClose} aria-label="Cerrar">×</button>
-        <div className="ficha-foto" style={{ "--pared": vivo(sel?.bg || prod.bg), "--mesa": vivo(sel?.table_color || prod.table_color || MESA_DEF, 1.06) }}>
-          <img ref={img} key={foto} src={foto} alt={prod.name + (sel?.image_url ? " en " + color : "")} />
-        </div>
+        {conFoto && (
+          <div className="ficha-foto" style={{ "--pared": vivo(sel?.bg || prod.bg), "--mesa": vivo(sel?.table_color || prod.table_color || MESA_DEF, 1.06) }}>
+            <img ref={img} key={foto} src={foto} alt={prod.name + (sel?.image_url ? " en " + color : "")} />
+          </div>
+        )}
         <div className="ficha-cuerpo">
           <p className="categoria">{prod.category}{prod.badge && <span className="etiqueta">{prod.badge === "ultimas" ? "Últimas" : "Nuevo"}</span>}</p>
           <h3>{prod.name}</h3>
