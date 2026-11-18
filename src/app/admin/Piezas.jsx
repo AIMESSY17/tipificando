@@ -270,7 +270,7 @@ function Escenita({ p, foto, pedestalGeneral }) {
   return (
     <div className="adm-escena" style={{ "--pared": vivo(bg), "--mesa": vivo(mesa, 1.06) }}>
       <div className="set">
-        <EscenaAuto piezas={piezas} mesa={tipo} vista={{ w: 330, h: 640 }} pedMin={70} techo={8} />
+        <EscenaAuto piezas={piezas} pedestal={tipo} vista={{ w: 330, h: 640 }} pedMin={70} techo={8} />
         {!src && <p className="adm-esc-vacia">Subí una foto de la pieza 📸<br />Cualquier foto: el fondo se quita solo.</p>}
       </div>
     </div>

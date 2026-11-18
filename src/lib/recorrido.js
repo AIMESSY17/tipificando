@@ -1,10 +1,10 @@
 // =====================================================================
-//  El giro de la mesa del taller.
-//  `s` es el ángulo de la mesa medido en piezas (0 = primera pieza adelante, 1 = segunda…).
+//  El giro del anillo del taller.
+//  `s` es el ángulo del anillo medido en piezas (0 = primera pieza en el pedestal, 1 = segunda…).
 //  No tiene tope: después de la última vuelve la primera (índice = s mod N).
 //
 //  - Arrastre: s sigue al dedo 1:1 (pxPorEstacion lo calcula la escena: lo que se corre en
-//    pantalla la pieza de adelante cuando la mesa gira una pieza).
+//    pantalla el frente del anillo cuando gira una pieza).
 //  - Al soltar: inercia (la velocidad del dedo proyecta hasta dónde llega) + resorte suave a la
 //    pieza entera más cercana a esa proyección. Un flick rápido gira varias.
 //  - Flechas, ruedita, botones y tocar una pieza: el mismo resorte, sumando o restando piezas al
@@ -13,7 +13,7 @@
 //  - La escena puede colgar `tocar(x, y)` (qué pieza hay en ese punto de la pantalla).
 //
 //  No tiene bucle propio: quien dibuja llama a paso(now) al principio de cada cuadro, así la
-//  mesa y lo que se ve salen del mismo valor de s en el mismo cuadro (cero retraso).
+//  anillo y lo que se ve salen del mismo valor de s en el mismo cuadro (cero retraso).
 // =====================================================================
 
 const K = 90;                       // rigidez del resorte (1/s²)

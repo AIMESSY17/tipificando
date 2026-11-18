@@ -105,7 +105,7 @@ img { display: block; max-width: 100%; }
 
 /* ---------- Navegación del taller: posición "03 / 10" y flechas (compu) ---------- */
 .nav-taller { position: absolute; inset: 0; z-index: 19; pointer-events: none; color: var(--ink-p); }
-.nav-num { position: absolute; right: 18px; top: calc(69.5dvh + 1px); font-family: var(--f-mono); font-size: 11px; letter-spacing: 0.14em;
+.nav-num { position: absolute; right: 18px; top: calc(71dvh + 1px); font-family: var(--f-mono); font-size: 11px; letter-spacing: 0.14em;
   color: var(--ink-p-soft); font-variant-numeric: tabular-nums; transition: color 0.15s; }
 .nav-flecha { position: absolute; top: calc(var(--apoyo) - 120px); width: 44px; height: 44px; border-radius: 50%; border: 1px solid var(--line-p);
   font-size: 17px; display: none; pointer-events: auto; color: var(--ink-p); transition: color 0.15s, border-color 0.15s, background-color 0.2s; }
@@ -114,7 +114,7 @@ img { display: block; max-width: 100%; }
 .nav-flecha.der { right: 28px; }
 
 /* ---------- Info (sobre la mesa) ---------- */
-.info { position: absolute; left: 0; right: 0; top: 69.5dvh; z-index: 20; text-align: center; padding: 0 22px; color: var(--ink-m); transition: color 0.15s; }
+.info { position: absolute; left: 0; right: 0; top: 71dvh; z-index: 20; text-align: center; padding: 0 22px; color: var(--ink-m); transition: color 0.15s; }
 .categoria { font-family: var(--f-mono); font-size: 10px; letter-spacing: 0.2em; text-transform: uppercase; color: var(--ink-m-soft); }
 .nombre { font-family: var(--f-display); font-size: clamp(34px, 9.4vw, 56px); line-height: 1; margin: 4px 0 6px; min-height: 1em;
   font-weight: 400; letter-spacing: -0.02em; }
@@ -151,6 +151,10 @@ img { display: block; max-width: 100%; }
   .nav-flecha { display: block; }
   .nav-num { right: 30px; }
   .tagline { font-size: 13px; }
+  /* compu: los textos a la izquierda, así la protagonista tiene todo el centro */
+  .con-3d .info { left: 6vw; right: auto; width: min(27vw, 380px); top: auto; bottom: 13dvh; padding: 0; text-align: left; }
+  .con-3d .fila-precio { justify-content: flex-start; }
+  .con-3d .nav-num { top: auto; bottom: 13dvh; }
 }
 @media (max-height: 640px) {
   .pista { display: none; }

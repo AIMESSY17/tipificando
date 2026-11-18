@@ -8,43 +8,47 @@ import { cargarFuente, pintarPalabra, medirPalabra, tamPalabra } from "@/lib/pal
 import { vivoLab, hexAOklab, mezclaOklch, oklabARgb } from "@/lib/color";
 
 // =====================================================================
-//  EL TALLER: una MESA REDONDA GIRATORIA con todas las piezas paradas en el borde.
+//  EL TALLER: la pieza activa en su PEDESTAL, adelante y al centro, y las demás en un ANILLO
+//  detrás (como un telón que gira).
 //
-//  La cámara está quieta, un poco elevada (~20° hacia abajo). Cambiar de pieza ES girar la mesa:
-//  `recorrido.s` (lib/recorrido.js) es el ángulo de la mesa medido en piezas (s = 3 → la pieza 3
-//  adelante al centro). El dedo lo mueve 1:1, al soltar hay inercia + resorte a la pieza más cercana.
+//  La cámara está quieta, un poco elevada (~20° hacia abajo). `recorrido.s` (lib/recorrido.js)
+//  es el ángulo del anillo medido en piezas (s = 3 → la pieza 3 es la protagonista). El dedo lo
+//  mueve 1:1; al soltar hay inercia + resorte a la pieza más cercana.
+//
+//  Cuando una pieza llega al frente del anillo SALE de él y avanza en arco hasta el pedestal,
+//  creciendo; la que estaba vuelve a su lugar en el anillo por el otro lado. Todo sale del ángulo:
+//  a mitad de camino una está volviendo y la otra saliendo (nada se anima después de soltar).
 //
 //  Un solo WebGL dibuja todo:
-//  - PARED y PISO: un shader cada uno (color de la pieza activa, degradé de luz, palabra pintada,
-//    esmalte líquido que nace detrás de la pieza que llega y se derrama según el ángulo, mezcla
-//    en OKLab, luz de ventana y sombra de planta proyectadas, sombras reales, grano y viñeta).
-//  - La mesa 3D (disco de travertino con canto biselado, o cabezal de torno gigante sobre su base),
-//    con sombra real sobre el piso. La tapa gira con el ángulo.
-//  - Las piezas 2.5D (parallax por profundidad + brillo de esmalte), cada una mirando a cámara con
-//    una leve rotación hacia la tangente (máx. ~30°). La activa (adelante) más grande, nítida y con
-//    luz de recorte; las del fondo más chicas, oscuras y desenfocadas.
+//  - PARED y PISO (la mesa del set): un shader cada uno (color de la pieza activa, degradé de luz,
+//    palabra pintada, esmalte líquido que nace detrás de la pieza que llega, mezcla en OKLab, luz
+//    de ventana y planta proyectadas, charco de luz del foco, sombras reales, grano y viñeta).
+//  - El pedestal protagonista 3D (travertino o torno) con un foco cálido de caída suave.
+//  - Las piezas 2.5D (parallax por profundidad + brillo de esmalte). La protagonista: grande,
+//    nítida, con luz de recorte y sombra marcada. Las del anillo: ~40% del tamaño, más oscuras,
+//    40% desaturadas y desenfocadas, con su sombra de contacto en el piso.
 //  - Si hay muchas piezas, solo las cercanas al frente tienen la foto en la GPU; el resto se
-//    dibuja como siluetas tenues (miniatura de 96 px) o no se dibuja.
+//    dibuja como siluetas tenues (miniatura de 96 px).
 //  - Haces de luz y polvo; profundidad de campo barata (mipmaps); calidad adaptativa.
-//
-//  El bucle llama a recorrido.paso() y dibuja con ese mismo valor: mesa, esmalte, palabra y textos
-//  salen del mismo cuadro (cero retraso con el dedo).
 // =====================================================================
 
 const PITCH = (20 * Math.PI) / 180; // la cámara mira 20° hacia abajo
 const PITCH_ZOOM = (9 * Math.PI) / 180; // y un poco menos cuando se acerca a la pieza
-const HT = 1;            // altura de la tapa de la mesa
-const TH = 0.3;          // espesor del disco
-const RP0 = 2.6, RP_MAX = 4.4; // radio del círculo de piezas (crece con la cantidad, hasta un tope)
-const BORDE = 0.45;      // la mesa sobresale esto del círculo de piezas
-const GAP_PARED = 8;     // de la mesa a la pared
-const BOOST = 0.5;       // cuánto más grande se ve la pieza activa
+const ALTO = 1.1;        // alto de la geometría del pedestal
+const PED_ALTO = 0.34, PED_RADIO = 0.58; // pedestal en unidades de la protagonista
+const RP0 = 2, RP_MAX = 3.8; // radio del anillo (crece con la cantidad de piezas, hasta un tope)
+const GAP_PED = 1.6;     // el pedestal está esto delante del anillo
+const GAP_PARED = 6;     // del anillo a la pared
+const RATIO_ANILLO = 0.4; // tamaño en pantalla de las piezas del anillo respecto de la protagonista
+const LAT = 0.85;        // cuánto se abre hacia el costado la trayectoria de salida/entrada
+const ARCO = 0.1;        // y un saltito al subir al pedestal
 const PIEZA_B = 1.3;     // "superficie" de cada pieza (misma área visual sin importar la forma)
 const ALTO_REF = 1.45, ANCHO_REF = 1.2; // pieza "típica" para encuadrar
 const NVENT = 11, VENT = 5; // hasta 11 piezas: todas con foto; si hay más, solo ±5 alrededor del frente
+const ARO = false;       // aro fino en el piso marcando el anillo (probado: sin aro la protagonista destaca más)
 const ZOOM_MS = 450;     // push-in al tocar la pieza (ease-out)
 const MX = 0.16, MY = 0.14; // margen del halo alrededor de la pieza
-const SOL = [-7, 9, 7].map((v) => v * 1.7); // posición del sol respecto del centro de la mesa
+const SOL = [-7, 9, 7];  // dirección del sol (se escala con el tamaño del set)
 const DL = (() => { const n = Math.hypot(...SOL); return SOL.map((v) => -v / n); })(); // dirección de la luz
 const VY0 = -7, VY1 = 10; // alto que cubre la textura de ventana + planta (en la pared)
 
@@ -149,65 +153,42 @@ function texTorno(T) {
   });
 }
 
-// La mesa: un Group con sus piezas (geometrías propias, se rearma si cambia el tipo o el radio)
-function armarMesa(T, tipo, RM, cache) {
-  const g = new T.Group();
-  const geos = [];
-  const add = (geo, mat) => {
-    geos.push(geo);
-    const m = new T.Mesh(geo, mat);
-    m.castShadow = m.receiveShadow = true;
-    g.add(m);
-    return m;
-  };
+
+// El pedestal protagonista (travertino o cabezal de torno). Radio 1 y alto ALTO; se escala con la pieza.
+function recursosPedestal(T, tipo) {
   if (tipo === "torno") {
-    // cabezal de torno gigante: disco de metal con marcas de barro, sobre la base del torno
-    cache.metalTapa ||= new T.MeshStandardMaterial({ map: texTorno(T), metalness: 0.7, roughness: 0.38 });
-    cache.metalLado ||= new T.MeshStandardMaterial({ color: "#9ea5ab", metalness: 0.85, roughness: 0.3 });
-    cache.plastico ||= new T.MeshStandardMaterial({ color: "#57514c", roughness: 0.5, metalness: 0.05 });
-    const e = 0.16;
-    const cab = new T.CylinderGeometry(RM, RM * 0.985, e, 160);
-    cab.translate(0, HT - e / 2, 0);
-    add(cab, [cache.metalLado, cache.metalTapa, cache.metalLado]);
-    // aro de la bandeja (el "pan" del torno) por debajo del cabezal
     const pan = new T.LatheGeometry(
-      [[RM * 0.62, HT - 0.42], [RM * 0.9, HT - 0.4], [RM * 0.93, HT - 0.24], [RM * 0.9, HT - 0.22], [RM * 0.62, HT - 0.3]].map(([a, b]) => new T.Vector2(a, b)),
-      120
-    );
-    add(pan, cache.plastico);
-    const base = new T.LatheGeometry(
-      [[0, 0], [RM * 0.6, 0], [RM * 0.62, 0.04], [RM * 0.55, HT - 0.4], [RM * 0.2, HT - 0.18], [0, HT - 0.18]].map(([a, b]) => new T.Vector2(a, b)),
+      [[0, 0.02], [1.2, 0.02], [1.27, 0.07], [1.29, 0.42], [1.24, 0.44], [1.19, 0.16], [0.3, 0.14], [0, 0.14]].map(([a, b]) => new T.Vector2(a, b)),
       96
     );
-    add(base, cache.plastico);
-  } else {
-    // disco de travertino con canto biselado, sobre un zócalo más chico
-    if (!cache.trav) {
-      const tex = texTravertino(T);
-      const lado = tex.clone();
-      lado.wrapS = T.RepeatWrapping;
-      lado.repeat.set(6, 0.25);
-      lado.needsUpdate = true;
-      cache.trav = new T.MeshStandardMaterial({ map: tex, bumpMap: tex, bumpScale: 0.35, roughness: 0.78, metalness: 0 });
-      cache.travLado = new T.MeshStandardMaterial({ map: lado, bumpMap: lado, bumpScale: 0.35, roughness: 0.8, metalness: 0 });
-      cache.travZocalo = new T.MeshStandardMaterial({ map: lado, color: "#d9cdb9", roughness: 0.85, metalness: 0 });
-    }
-    const b = 0.07;
-    const tapa = new T.CircleGeometry(RM - b, 160);
-    tapa.rotateX(-Math.PI / 2);
-    tapa.translate(0, HT, 0);
-    add(tapa, cache.trav);
-    const canto = new T.LatheGeometry(
-      [[RM * 0.8, HT - TH], [RM - 0.05, HT - TH], [RM, HT - TH + 0.05], [RM, HT - b], [RM - b * 0.3, HT - b * 0.3], [RM - b, HT]].map(([a, c]) => new T.Vector2(a, c)),
-      160
-    );
-    add(canto, cache.travLado);
-    const zocalo = new T.CylinderGeometry(RM * 0.8, RM * 0.82, HT - TH, 96, 1, true);
-    zocalo.translate(0, (HT - TH) / 2, 0);
-    add(zocalo, cache.travZocalo);
+    const plastico = new T.MeshStandardMaterial({ color: "#57514c", roughness: 0.5, metalness: 0.05 });
+    const col = new T.CylinderGeometry(0.2, 0.24, ALTO - 0.12, 32);
+    col.translate(0, (ALTO - 0.12) / 2, 0);
+    const cab = new T.CylinderGeometry(1, 0.97, 0.12, 96);
+    cab.translate(0, ALTO - 0.06, 0);
+    const metalLado = new T.MeshStandardMaterial({ color: "#9ea5ab", metalness: 0.85, roughness: 0.3 });
+    const metalTapa = new T.MeshStandardMaterial({ map: texTorno(T), metalness: 0.7, roughness: 0.38 });
+    return { partes: [[pan, plastico], [col, plastico], [cab, [metalLado, metalTapa, metalLado]]], radioMax: 1.29 };
   }
-  g.userData.dispose = () => geos.forEach((x) => x.dispose());
-  return g;
+  const pts = [[0, 0], [0.985, 0], [1, 0.015], [1, ALTO - 0.05], [0.99, ALTO - 0.012], [0.955, ALTO], [0, ALTO]].map(([a, b]) => new T.Vector2(a, b));
+  const tex = texTravertino(T);
+  tex.wrapS = T.RepeatWrapping;
+  const mat = new T.MeshStandardMaterial({ map: tex, bumpMap: tex, bumpScale: 0.35, roughness: 0.78, metalness: 0 });
+  return { partes: [[new T.LatheGeometry(pts, 128), mat]], radioMax: 1 };
+}
+
+// Sombra de contacto (mancha suave y redonda debajo de cada pieza del anillo)
+function texContacto(T) {
+  const t = canvasTex(T, 128, 128, (x, w) => {
+    const g = x.createRadialGradient(w / 2, w / 2, 0, w / 2, w / 2, w / 2);
+    g.addColorStop(0, "rgba(0,0,0,0.85)");
+    g.addColorStop(0.45, "rgba(0,0,0,0.45)");
+    g.addColorStop(1, "rgba(0,0,0,0)");
+    x.fillStyle = g;
+    x.fillRect(0, 0, w, w);
+  });
+  t.colorSpace = T.NoColorSpace;
+  return t;
 }
 
 // Luz de ventana (canal rojo) + sombra de la planta (canal verde), en el espacio de la pared.
@@ -328,7 +309,7 @@ float vnoise(vec2 p){
 }
 `;
 
-// Pared (plano detrás de la mesa) y piso comparten este shader; MESA (el piso) cambia lo propio.
+// Pared (plano detrás del anillo) y piso (la mesa del set) comparten este shader; MESA (el piso) cambia lo propio.
 const FS_SET = /* glsl */ `
 #include <common>
 #include <bsdfs>
@@ -349,6 +330,7 @@ uniform sampler2D uPal0, uPal1;
 uniform vec4 uPalR[2];  // palabra actual (0) y la que llega (1): centro x, centro y, medio ancho, medio alto
 uniform vec4 uPalM[2];  // x: corrimiento horizontal, y: opacidad, z: desenfoque (bias)
 uniform vec4 uGlow;     // brillo cálido del pino: xy dónde, z cuánto
+uniform vec4 uFoco;     // charco de luz del foco en el piso: xy (x, z) dónde, z radio, w cuánto
 uniform sampler2D uCookie, uGrano;
 uniform vec3 uDL;       // dirección de la luz
 
@@ -422,6 +404,9 @@ void main(){
   col = mix(col, vec3(1.0), 0.45 * canto);
   vec4 gr = texture2D(uGrano, vec2(X, Z) * 0.42);
   col = mix(col, gr.rgb, gr.a);
+  // charco cálido del foco alrededor del pedestal (caída suave)
+  float dfo = length(vec2(X - uFoco.x, P.z - uFoco.y) * vec2(1.0, 1.35)) / max(uFoco.z, 1e-3);
+  col = mix(col, min(col * vec3(1.16, 1.08, 0.96) + vec3(0.05, 0.035, 0.015), 1.0), uFoco.w * (1.0 - smoothstep(0.15, 1.0, dfo)) * 2.2);
 #else
   vec3 col = mezcla(uParA, uParB, uParAL, uParBL, m);
   // degradé de la luz de ventana (115°): luz a la izquierda, sombra a la derecha
@@ -485,11 +470,11 @@ void main(){ vUv = uv; gl_Position = projectionMatrix * modelViewMatrix * vec4(p
 // La pieza: parallax por profundidad + brillo de esmalte + sombreado.
 // `tilt` mezcla el vaivén en reposo / mouse / giroscopio con el ángulo real respecto de la cámara.
 // `blur` = profundidad de campo barata (mipmaps más bajos); `luz` oscurece las del fondo;
-// `rim` = luz de recorte de la activa (un filo claro arriba y a la izquierda); `alfa` = siluetas.
+// `rim` = luz de recorte y foco cálido de la protagonista; `alfa` = siluetas; `sat` = saturación (anillo 0.6).
 const FS_PIEZA = /* glsl */ `varying vec2 vUv;
 uniform sampler2D img; uniform sampler2D dep;
 uniform vec2 tilt; uniform float px; uniform float fuerza; uniform float glow; uniform float blur;
-uniform float luz; uniform float rim; uniform float alfa;
+uniform float luz; uniform float rim; uniform float alfa; uniform float sat;
 void main(){
   float d = texture2D(dep, vUv, blur).r;
   vec2 off = tilt * (d - 0.3) * vec2(0.032, -0.014) * fuerza;
@@ -503,8 +488,9 @@ void main(){
   vec3 L = normalize(vec3(-0.35 + tilt.x * 0.9, 0.2, 0.9));
   float spec = pow(max(dot(n, L), 0.0), 30.0) * 0.30;
   float shade = mix(0.86, 1.04, max(dot(n, normalize(vec3(-0.4 + tilt.x * 0.5, 0.0, 1.0))), 0.0));
-  vec3 col = (c.rgb * shade + spec) * luz;
   float lum = dot(c.rgb, vec3(0.299, 0.587, 0.114));
+  vec3 col = (mix(vec3(lum), c.rgb, sat) * shade + spec) * luz;
+  col *= mix(vec3(1.0), vec3(1.05, 1.01, 0.95), rim); // foco cálido
   col += vec3(1.0, 0.62, 0.26) * smoothstep(0.6, 0.95, lum) * glow * 0.6;
   if (rim > 0.0){
     float r = px * 2.2;
@@ -621,6 +607,7 @@ function coloresDe(pz) {
   return r;
 }
 
+
 // =====================================================================
 export default function Taller(props) {
   const ref = useRef(null);
@@ -674,9 +661,10 @@ export default function Taller(props) {
       sol.shadow.bias = -0.0004;
       sol.shadow.normalBias = 0.02;
       sol.shadow.radius = 5;
-      sol.position.set(SOL[0], HT + SOL[1], SOL[2]);
-      sol.target.position.set(0, HT, 0);
       scene.add(sol, sol.target);
+      // foco cálido de caída suave, solo sobre la protagonista y su pedestal
+      const foco = new T.SpotLight("#ffd8a6", 0, 0, 0.5, 1, 2);
+      scene.add(foco, foco.target);
       const punto = new T.PointLight("#ffae55", 0, 7, 2);
       scene.add(punto);
 
@@ -691,7 +679,7 @@ export default function Taller(props) {
         uEsm: { value: new T.Vector4(0, -9, 0, 1.6) }, uDL: { value: new T.Vector3(...DL) },
         uPal0: { value: negro }, uPal1: { value: negro },
         uPalR: { value: [new T.Vector4(), new T.Vector4()] }, uPalM: { value: [new T.Vector4(), new T.Vector4()] },
-        uGlow: { value: new T.Vector4() },
+        uGlow: { value: new T.Vector4() }, uFoco: { value: new T.Vector4() },
         uCookie: { value: texCk }, uGrano: { value: texGr },
       };
       for (const n of ["Par", "Luz", "Som", "Ton", "Mes"]) for (const s of ["A", "B", "AL", "BL"]) uSet["u" + n + s] = { value: v3() };
@@ -701,7 +689,7 @@ export default function Taller(props) {
       const matSet = (piso) => {
         const u = T.UniformsUtils.merge([T.UniformsLib.lights]);
         Object.assign(u, uSet);
-        if (piso) u.uSombra = { value: 0.3 };
+        if (piso) u.uSombra = { value: 0.34 };
         return new T.ShaderMaterial({ uniforms: u, vertexShader: vsSet, fragmentShader: FS_SET, lights: true, defines: piso ? { MESA: 1 } : {} });
       };
       const geoPared = new T.PlaneGeometry(400, 90);
@@ -717,22 +705,38 @@ export default function Taller(props) {
       piso.frustumCulled = false;
       scene.add(pared, piso);
 
-      // ---------- La mesa (gira con el ángulo) ----------
-      const cacheMesa = {};
-      let mesa = null, mesaClave = "";
-      const ponerMesa = () => {
-        const tipo = pr.current.mesa || pr.current.piezas?.[0]?.tipo || "travertino";
-        const clave = tipo + "|" + st.RM.toFixed(3);
-        if (clave === mesaClave) return;
-        mesaClave = clave;
-        if (mesa) {
-          scene.remove(mesa);
-          mesa.userData.dispose();
+      // ---------- Pedestal protagonista ----------
+      const peds = {};
+      const recPed = (t) => peds[t] || (peds[t] = recursosPedestal(T, t));
+      const pedestal = new T.Group();
+      scene.add(pedestal);
+      let pedTipo = "";
+      const ponerPedestal = () => {
+        const tipo = pr.current.pedestal || pr.current.piezas?.[0]?.tipo || "travertino";
+        if (tipo === pedTipo) return;
+        pedTipo = tipo;
+        pedestal.clear();
+        for (const [g, m] of recPed(tipo).partes) {
+          const me = new T.Mesh(g, m);
+          me.castShadow = me.receiveShadow = true;
+          pedestal.add(me);
         }
-        mesa = armarMesa(T, tipo, st.RM, cacheMesa);
-        scene.add(mesa);
         st.sombraSucia = true;
       };
+      // sombras de contacto y aro del anillo
+      const texCt = texContacto(T);
+      const geoCt = new T.PlaneGeometry(1, 1);
+      geoCt.rotateX(-Math.PI / 2);
+      const ctPed = new T.Mesh(geoCt, new T.MeshBasicMaterial({ map: texCt, transparent: true, depthWrite: false, opacity: 0.55, toneMapped: false }));
+      ctPed.renderOrder = 2;
+      scene.add(ctPed);
+      const aro = new T.Mesh(new T.BufferGeometry(), new T.MeshBasicMaterial({ color: "#1a0c08", transparent: true, opacity: 0.22, depthWrite: false, toneMapped: false }));
+      aro.renderOrder = 1;
+      const ctProt = new T.Mesh(geoCt, new T.MeshBasicMaterial({ map: texCt, transparent: true, depthWrite: false, opacity: 0, toneMapped: false }));
+      ctProt.renderOrder = 3;
+      scene.add(ctProt);
+      aro.visible = false;
+      scene.add(aro);
 
       // ---------- Haces y polvo ----------
       const uHaz = { uTime: { value: 0 }, uInt: { value: 0.06 } };
@@ -754,8 +758,8 @@ export default function Taller(props) {
       vacioDep.unpackAlignment = 1;
       vacioDep.needsUpdate = true;
       const st = {
-        W: 0, H: 0, fov: 40, dist: 20, off: [0, 0], yBase: 0, ppuF: 1, ppuYF: 1, apoyo: 0, hor: 0, backTop: 0,
-        boost: BOOST, RP: RP0, RM: RP0 + BORDE, ZW: RP0 + BORDE + GAP_PARED, alfa: Math.PI / 5, N: 0, vistaW: 10, vistaH: 10, zMax: 30,
+        W: 0, H: 0, fov: 40, off: [0, 0], yBase: 0, refPx: 200, maxH: 300, maxW: 300, k: 2.5, HPed: 1, ppuXP: 1, ppuYP: 1, hor: 0, backTop: 0,
+        RP: RP0, ZP: RP0 + GAP_PED, ZW: RP0 + GAP_PARED, ringY: 0, zc: 0, alfa: Math.PI / 5, N: 0, vistaW: 10, vistaH: 10, zMax: 30,
         last: 0, ema: 16.7, muestras: 0, bien: 0, modo: 0, sombraSucia: true, pausado: !!pr.current.pausado, oculto: document.hidden,
         raf: 0, tiltX: 0, tiltY: 0, version: 1, zoom: pr.current.enfoque ? 1 : 0, zoomObj: pr.current.enfoque ? 1 : 0, zoom0: 0, zoomT: 0, medirPend: false,
         avisado: false, rectClave: "", fundido: 0, techo: 0, k0: Math.round(rec.s), base: null,
@@ -925,7 +929,7 @@ export default function Taller(props) {
         const uni = {
           img: { value: vacio }, dep: { value: vacioDep }, tilt: { value: new T.Vector2() },
           px: { value: 0.005 }, fuerza: { value: 1 }, glow: { value: 0 }, blur: { value: 0 },
-          luz: { value: 1 }, rim: { value: 0 }, alfa: { value: 1 },
+          luz: { value: 1 }, rim: { value: 0 }, alfa: { value: 1 }, sat: { value: 1 },
         };
         const pieza = new T.Mesh(geoPieza, new T.ShaderMaterial({ uniforms: uni, vertexShader: VS, fragmentShader: FS_PIEZA, transparent: true, depthWrite: false, side: T.DoubleSide, toneMapped: false }));
         const matSombra = new T.MeshDepthMaterial({ depthPacking: T.RGBADepthPacking, alphaTest: 0.5, map: vacio, side: T.DoubleSide });
@@ -937,8 +941,11 @@ export default function Taller(props) {
         pz.add(halo, pieza);
         grupo.add(pz);
         grupo.visible = false;
-        scene.add(grupo);
-        return { i: -1, grupo, pz, pieza, halo, uni, uniHalo, matSombra, clave: "", lay: null, foto: null, modo: "", glow: false };
+        const contacto = new T.Mesh(geoCt, new T.MeshBasicMaterial({ map: texCt, transparent: true, depthWrite: false, opacity: 0, toneMapped: false }));
+        contacto.renderOrder = 2;
+        contacto.visible = false;
+        scene.add(grupo, contacto);
+        return { i: -1, grupo, pz, pieza, halo, contacto, uni, uniHalo, matSombra, clave: "", lay: null, foto: null, modo: "", glow: false, e: 0, sc: 1 };
       };
 
       // Una pieza: qué textura usa (foto o miniatura) y su tamaño. Solo trabaja si algo cambió.
@@ -955,6 +962,7 @@ export default function Taller(props) {
         sl.glow = !!pz?.glow && modo === "foto";
         if (!modo) {
           sl.grupo.visible = false;
+          sl.contacto.visible = false;
           sl.foto = null;
           sl.lay = sl.lay || tamPieza();
           return;
@@ -978,56 +986,69 @@ export default function Taller(props) {
         st.rectClave = "";
       };
 
+      // tamaño de la protagonista (en unidades de pieza): misma superficie visual para todas,
+      // sin pasarse del alto y el ancho máximos de la pantalla
+      const kDe = (lay) => Math.min(st.k, st.maxH / (lay.hU * st.ppuYP), st.maxW / (lay.wU * st.ppuXP));
+
       // ---------- Encuadre ----------
       const vtmp = new T.Vector3();
       const proy = (c, x, y, z) => {
         vtmp.set(x, y, z).project(c);
         return [((vtmp.x + 1) / 2) * st.W, ((1 - vtmp.y) / 2) * st.H];
       };
-      // punto de la pared (z = -ZW) que cae en el píxel (px, py) con la cámara en reposo
       const rayo = (px, py) => {
         vtmp.set((px / st.W) * 2 - 1, -(py / st.H) * 2 + 1, 0.5).unproject(ref0);
         const o = ref0.position;
         return [o, vtmp.sub(o).normalize()];
       };
+      // punto de la pared (z = -ZW) que cae en el píxel (px, py) con la cámara en reposo
       const enPared = (px, py) => {
         const [o, d] = rayo(px, py);
         const t = (-st.ZW - o.z) / d.z;
         return [o.x + d.x * t, o.y + d.y * t];
       };
-      const camaraEn = (c, dist, off) => {
+      // cámara a `dist` del pedestal, mirando su tapa (a altura y) desde 20° arriba
+      const camaraEn = (c, dist, off, y) => {
         c.fov = st.fov;
         c.aspect = st.W / st.H;
-        c.position.set(0, HT + Math.sin(PITCH) * dist, Math.cos(PITCH) * dist);
-        c.lookAt(0, HT, 0);
+        c.position.set(0, y + Math.sin(PITCH) * dist, st.ZP + Math.cos(PITCH) * dist);
+        c.lookAt(0, y, st.ZP);
         if (off) c.setViewOffset(st.W, st.H, off[0], off[1], st.W, st.H);
         else c.clearViewOffset();
         c.updateProjectionMatrix();
         c.updateMatrixWorld();
       };
-      // tamaño relativo de una pieza según su ángulo: la de adelante, más grande
-      const escalaEn = (a) => 1 + st.boost * suave(Math.max(0, 1 - Math.abs(a) / st.alfa));
 
-      // Con la cámara a `dist`, corrida para que la base de la pieza activa caiga en yBase:
-      // cuánto sobresale el círculo a los costados y dónde queda (en pantalla) la pieza más alta del fondo.
+      // Con la cámara a `dist`: la tapa del pedestal en yBase y la protagonista del alto pedido.
+      // Devuelve cuánto sobresale el anillo a los costados, el alto en pantalla de una pieza del
+      // anillo (al costado) y dónde queda la pieza más alta del fondo.
       const evaluar = (dist) => {
-        camaraEn(ref0, dist, null);
-        const off = [0, proy(ref0, 0, HT, st.RP)[1] - st.yBase];
-        camaraEn(ref0, dist, off);
-        let ext = proy(ref0, st.RM, HT, 0)[0] - st.W / 2, backTop = Infinity;
+        let k = st.k, H = PED_ALTO * k, off = null;
+        for (let it = 0; it < 3; it++) {
+          camaraEn(ref0, dist, null, H);
+          off = [0, proy(ref0, 0, H, st.ZP)[1] - st.yBase];
+          camaraEn(ref0, dist, off, H);
+          const ppuY = proy(ref0, 0, H, st.ZP)[1] - proy(ref0, 0, H + 1, st.ZP)[1];
+          k = st.refPx / (ALTO_REF * ppuY);
+          H = PED_ALTO * k;
+        }
+        camaraEn(ref0, dist, null, H);
+        off = [0, proy(ref0, 0, H, st.ZP)[1] - st.yBase];
+        camaraEn(ref0, dist, off, H);
+        const ry = 0, zc = 0;
+        let ext = 0, backTop = st.N > 1 ? Infinity : st.H;
         for (let n = 0; n <= 48; n++) {
           const a = (n / 48) * Math.PI;
-          const sc = escalaEn(a);
-          const x = st.RP * Math.sin(a), z = st.RP * Math.cos(a);
-          for (const yy of [HT, HT + ALTO_REF * sc]) ext = Math.max(ext, proy(ref0, x + ANCHO_REF * 0.5 * sc, yy, z)[0] - st.W / 2);
-          if (st.N > 1 && a >= st.alfa * 0.999) backTop = Math.min(backTop, proy(ref0, x, HT + ALTO_REF * sc, z)[1]);
+          const x = st.RP * Math.sin(a), z = zc + st.RP * Math.cos(a);
+          for (const yy of [ry, ry + ALTO_REF]) ext = Math.max(ext, proy(ref0, x + ANCHO_REF * 0.5, yy, z)[0] - st.W / 2);
+          if (st.N > 1 && a >= st.alfa * 0.999) backTop = Math.min(backTop, proy(ref0, x, ry + ALTO_REF, z)[1]);
         }
-        if (st.N <= 1) backTop = proy(ref0, 0, HT, -st.RM)[1];
-        return { ext, backTop, off };
+        const lado = proy(ref0, st.RP, ry, zc)[1] - proy(ref0, st.RP, ry + ALTO_REF, zc)[1];
+        return { ext, backTop, lado, k, H, off };
       };
       const buscar = (ok) => {
-        let lo = 3, hi = 260;
-        for (let n = 0; n < 32; n++) {
+        let lo = 3, hi = 300;
+        for (let n = 0; n < 30; n++) {
           const mid = (lo + hi) / 2;
           if (ok(evaluar(mid))) hi = mid;
           else lo = mid;
@@ -1047,37 +1068,41 @@ export default function Taller(props) {
         const pxr = Math.min(window.devicePixelRatio || 1, prMax);
         renderer.setPixelRatio(pxr);
         renderer.setSize(W, H, false);
+        ponerPedestal();
 
-        // la mesa: el radio crece con la cantidad de piezas (que entren sin encimarse) hasta un tope
+        // el anillo: el radio crece con la cantidad de piezas hasta un tope; el pedestal, delante
         st.alfa = (Math.PI * 2) / N;
-        // con muchas piezas el círculo queda más chico en pantalla: la activa se agranda un poco más
-        st.boost = BOOST + 0.3 * Math.min(1, Math.max(0, (N - 10) / 20));
-        st.RP = Math.min(RP_MAX, Math.max(RP0, (N * 0.95) / (Math.PI * 2)));
-        st.RM = st.RP + BORDE;
-        st.ZW = st.RM + GAP_PARED;
-        ponerMesa();
+        st.RP = Math.min(RP_MAX, Math.max(RP0, (N * 0.75) / (Math.PI * 2)));
+        st.ZP = st.RP + GAP_PED;
+        st.ZW = st.RP + GAP_PARED;
 
-        // encuadre: celu → el círculo entero de lado a lado, la activa en el tercio inferior-medio;
-        // compu → círculo más abierto, con aire a los costados. Arriba siempre queda lugar para la palabra.
+        // encuadre: la protagonista grande (celu ~45-50% del alto útil, entre el logo y los textos;
+        // compu con los textos a la izquierda); el anillo detrás, con las piezas a ~40% de su tamaño
         const previa = !!pr.current.vista;
+        const compu = W >= 900 && !previa;
         const asp = W / H;
         st.fov = Math.min(74, Math.max(30, (2 * Math.atan(Math.tan((38 * Math.PI) / 360) / asp) * 180) / Math.PI));
         st.techo = pr.current.techo ?? (W > 700 ? 0.1 * H : 0.125 * H);
-        st.yBase = previa ? 0.8 * H : Math.min(0.655 * H, H - 230);
-        const margen = previa ? 10 : W >= 900 ? W * 0.14 : 6;
-        const banda = previa ? 0.22 * H : Math.min(210, Math.max(74, (W >= 900 ? 0.21 : 0.15) * H));
-        const dH = buscar((r) => r.ext <= W / 2 - margen);
-        const dV = buscar((r) => r.backTop >= st.techo + banda);
-        st.dist = Math.max(dH, dV);
-        const r = evaluar(st.dist);
+        st.yBase = previa ? 0.84 * H : compu ? 0.76 * H : Math.min(0.6 * H, H - 300);
+        // (la proyección agranda ~12% la pieza parada: estos altos son en la base)
+        st.refPx = previa ? 0.4 * H : compu ? 0.4 * H : Math.min(0.25 * H, (st.yBase - st.techo) * 0.5);
+        st.maxH = previa ? 0.5 * H : compu ? 0.48 * H : Math.min(0.31 * H, (st.yBase - st.techo) * 0.62);
+        st.maxW = compu ? 0.34 * W : 0.8 * W;
+        const margen = previa ? 10 : compu ? W * 0.3 : 4;
+        const dR = buscar((r) => r.lado <= RATIO_ANILLO * st.refPx);
+        const dF = buscar((r) => r.ext <= W / 2 - margen);
+        const dist = Math.max(dR, dF);
+        const r = evaluar(dist);
         st.off = r.off;
         st.backTop = r.backTop;
+        st.k = r.k;
+        st.HPed = r.H;
         cam.copy(ref0);
-        st.ppuF = proy(ref0, 1, HT, st.RP)[0] - proy(ref0, 0, HT, st.RP)[0];
-        st.ppuYF = proy(ref0, 0, HT, st.RP)[1] - proy(ref0, 0, HT + 1, st.RP)[1];
-        // 1:1 con el dedo: lo que se corre la pieza de adelante por cada pieza que gira la mesa
-        rec.pxPorEstacion = N > 1 ? Math.min(st.RP * st.alfa * st.ppuF, W * 0.85) : 400;
-        st.apoyo = st.yBase;
+        st.ppuXP = proy(ref0, 1, st.HPed, st.ZP)[0] - proy(ref0, 0, st.HPed, st.ZP)[0];
+        st.ppuYP = proy(ref0, 0, st.HPed, st.ZP)[1] - proy(ref0, 0, st.HPed + 1, st.ZP)[1];
+        // 1:1 con el dedo: lo que se corre el frente del anillo por cada pieza (con un mínimo cómodo)
+        const ppuA = proy(ref0, 1, st.ringY, st.zc + st.RP)[0] - proy(ref0, 0, st.ringY, st.zc + st.RP)[0];
+        rec.pxPorEstacion = N > 1 ? Math.min(W * 0.85, Math.max(W * 0.3, st.RP * st.alfa * ppuA)) : 400;
         st.hor = proy(ref0, 0, 0, -st.ZW)[1];
         const [xl, yt] = enPared(0, 0), [xr] = enPared(W, 0), [, yb] = enPared(0, Math.min(st.hor, H));
         st.vistaW = xr - xl;
@@ -1086,6 +1111,34 @@ export default function Taller(props) {
           const [o, d] = rayo(W / 2, H);
           st.zMax = d.y < -1e-3 ? o.z + d.z * (-o.y / d.y) + st.ZW : 40;
         }
+        // pedestal, su sombra de contacto, el foco y el aro
+        const k = st.k;
+        const rmax = recPed(pedTipo).radioMax;
+        pedestal.position.set(0, 0, st.ZP);
+        pedestal.scale.set((PED_RADIO * k * (rmax > 1 ? 1.08 : 1)) / rmax, st.HPed / ALTO, (PED_RADIO * k * (rmax > 1 ? 1.08 : 1)) / rmax);
+        ctPed.position.set(0.15 * k, 0.006, st.ZP - 0.1 * k);
+        ctPed.scale.set(PED_RADIO * k * 3.2, 1, PED_RADIO * k * 2.4);
+        const fd = 3.4 * k;
+        foco.position.set(-0.25 * fd, st.HPed + 0.75 * fd, st.ZP + 0.6 * fd);
+        foco.target.position.set(0, st.HPed + 0.3 * k, st.ZP);
+        foco.target.updateMatrixWorld();
+        foco.angle = Math.atan((1.25 * k) / fd);
+        foco.penumbra = 1;
+        foco.intensity = 2.4 * fd * fd;
+        uSet.uFoco.value.set(0, st.ZP, PED_RADIO * k * 2.8, 0.28);
+        aro.geometry.dispose();
+        aro.geometry = new T.RingGeometry(st.RP - 0.025, st.RP + 0.025, 192);
+        aro.geometry.rotateX(-Math.PI / 2);
+        aro.position.set(0, 0.004, st.zc);
+        aro.visible = ARO && N > 1;
+        // sol: escala con el set
+        const sc = (st.RP + k) / 3;
+        sol.target.position.set(0, 0, st.ZP * 0.45);
+        sol.position.set(SOL[0] * sc * 1.7, SOL[1] * sc * 1.7, st.ZP * 0.45 + SOL[2] * sc * 1.7);
+        sol.target.updateMatrixWorld();
+        const lado = st.RP + 2.5 + k;
+        Object.assign(sol.shadow.camera, { left: -lado, right: lado, top: lado, bottom: -lado, near: 0.5, far: 100 });
+        sol.shadow.camera.updateProjectionMatrix();
         uSet.uZW.value = st.ZW;
         uSet.uSw.value = Math.max(12, Math.min(34, st.vistaW * 1.05));
         uSet.uPR.value = pxr;
@@ -1096,11 +1149,8 @@ export default function Taller(props) {
         pared.position.z = -st.ZW;
         piso.position.z = -st.ZW;
         geomLuz();
-        const lado = st.RM + 2.6;
-        Object.assign(sol.shadow.camera, { left: -lado, right: lado, top: lado, bottom: -lado, near: 1, far: 60 });
-        sol.shadow.camera.updateProjectionMatrix();
         const parent = canvas.closest(".tienda, .adm-escena") || canvas.parentElement;
-        parent?.style.setProperty("--apoyo", st.apoyo.toFixed(1) + "px");
+        parent?.style.setProperty("--apoyo", st.yBase.toFixed(1) + "px");
         parent?.style.setProperty("--horizonte", st.hor.toFixed(1) + "px");
         rectPal.clear();
         st.version++;
@@ -1110,29 +1160,31 @@ export default function Taller(props) {
         pedirCuadro();
       };
 
-      // Dónde va la palabra de la pieza i (en la pared): centrada arriba, debajo del logo; las piezas
-      // del fondo del círculo no la pueden tapar y la activa tapa como mucho la parte de abajo.
+      // Dónde va la palabra de la pieza i (en la pared): arriba, debajo del logo, que se lea entera
+      // (la protagonista la toca como mucho en el borde de abajo) y sin que el anillo la tape.
       const rectPal = new Map();
       const rectPalabra = (i) => {
         const pz = (pr.current.piezas || [])[i];
         if (!pz?.palabra || !fuenteOk) return null;
         const sl = slots[i];
-        const hU = sl?.modo === "foto" ? sl.lay.hU : ALTO_REF;
-        const clave = pz.palabra + "|" + hU.toFixed(3);
+        const lay = sl?.modo === "foto" ? sl.lay : null;
+        const hU = lay ? lay.hU * kDe(lay) : ALTO_REF * st.k;
+        const topeProt = proy(ref0, 0, st.HPed + hU, st.ZP)[1];
+        const hPx = st.yBase - topeProt;
+        const clave = pz.palabra + "|" + hPx.toFixed(1);
         const memo = rectPal.get(i);
         if (memo?.clave === clave) return memo.r;
         const m = medirPalabra(pz.palabra);
         let F = tamPalabra(pz.palabra, st.W, st.H);
         let hP = m.h * F;
-        const centro = (pr.current.vista ? 0.27 : 0.255) * st.H;
+        const centro = (pr.current.vista ? 0.22 : 0.24) * st.H;
         let top = centro + m.cy * F - hP / 2;
-        const topeActiva = st.yBase - hU * (1 + st.boost) * st.ppuYF;
-        const lim = Math.min(st.backTop - 6, topeActiva + 0.3 * hP);
+        const lim = Math.min(st.backTop - 6, topeProt + 0.08 * hP);
         if (top + hP > lim) top = lim - hP;
         if (top < st.techo) {
           top = st.techo;
           if (top + hP > lim) {
-            F = Math.max(24, (lim - st.techo) / m.h);
+            F = Math.max(24, (lim - st.techo) / (m.h - 0.08));
             hP = m.h * F;
           }
         }
@@ -1258,9 +1310,8 @@ export default function Taller(props) {
       // dónde cae en la pared (detrás) un punto del espacio visto desde la cámara en reposo
       const detras = (x, y, z) => {
         const o = ref0.position;
-        const dx = x - o.x, dy = y - o.y, dz = z - o.z;
-        const t = (-st.ZW - o.z) / dz;
-        return [o.x + dx * t, o.y + dy * t];
+        const t = (-st.ZW - o.z) / (z - o.z);
+        return [o.x + (x - o.x) * t, o.y + (y - o.y) * t];
       };
 
       const cuadro = (now) => {
@@ -1308,6 +1359,8 @@ export default function Taller(props) {
           precargar();
         }
         const iF = modN(base, N);
+        while (slots.length < N) slots.push(nuevoSlot());
+        const slF = slots[iF];
 
         // push-in (tocar la pieza): ZOOM_MS con ease-out cúbico, desde donde esté (se puede interrumpir)
         if (red) st.zoom = st.zoomObj;
@@ -1317,20 +1370,18 @@ export default function Taller(props) {
         }
         const z = Math.max(0, Math.min(1, st.zoom));
 
-        // cámara: quieta en reposo; con la ficha abierta se acerca a la pieza de adelante y la deja
-        // entera en la zona libre (celu: franja de arriba; compu: a la izquierda de la ficha)
-        while (slots.length < N) slots.push(nuevoSlot());
-        const slF = slots[iF];
+        // cámara: quieta en reposo; con la ficha abierta se acerca a la protagonista y la deja entera
+        // en la zona libre (celu: franja de arriba; compu: a la izquierda de la ficha)
         camPos.copy(ref0.position);
-        camMira.set(0, HT, 0);
+        camMira.set(0, st.HPed, st.ZP);
         let ox = st.off[0], oy = st.off[1];
         if (z > 0 && slF?.lay) {
           const enc = zonaLibre();
-          const sc = 1 + st.boost;
-          const hU = slF.lay.hU * sc, wU = slF.lay.wU * sc;
-          pc.set(slF.lay.shiftU * sc, HT + hU * 0.5, st.RP);
+          const k = kDe(slF.lay);
+          const hU = slF.lay.hU * k, wU = slF.lay.wU * k;
+          pc.set(slF.lay.shiftU * k, st.HPed + hU * 0.5, st.ZP);
           const tg = 2 * Math.tan((st.fov * Math.PI) / 360);
-          const d1 = Math.max(2.5, hU / (tg * (enc.h / st.H)), wU / (tg * (st.W / st.H) * (enc.w / st.W)));
+          const d1 = Math.max(1.5, hU / (tg * (enc.h / st.H)), wU / (tg * (st.W / st.H) * (enc.w / st.W)));
           tmp.set(pc.x, pc.y + Math.sin(PITCH_ZOOM) * d1, pc.z + Math.cos(PITCH_ZOOM) * d1);
           camPos.lerp(tmp, z);
           camMira.lerp(pc, z);
@@ -1342,9 +1393,6 @@ export default function Taller(props) {
         cam.setViewOffset(st.W, st.H, ox, oy, st.W, st.H);
         cam.updateMatrixWorld();
 
-        // la mesa gira con el ángulo (la pieza i está en (i - s)·α)
-        if (mesa) mesa.rotation.y = -s * st.alfa;
-
         // ---------- piezas ----------
         const quieto = now - input.t > 2500;
         const tx = red ? 0 : quieto ? Math.sin(tiempo * 0.55) * 0.9 : input.x;
@@ -1353,12 +1401,12 @@ export default function Taller(props) {
         st.tiltX += (tx - st.tiltX) * kk;
         st.tiltY += (ty - st.tiltY) * kk;
         const pulso = 0.5 + 0.5 * Math.sin(tiempo * 2.42);
-        let glowSl = null, glowC = 0;
+        let glowSl = null, glowC = 0, prot = null;
         visibles.length = 0;
         for (let i = 0; i < slots.length; i++) {
           const sl = slots[i];
           if (i >= N) {
-            sl.grupo.visible = false;
+            sl.grupo.visible = sl.contacto.visible = false;
             continue;
           }
           const dF = distFrente(i, s, N);
@@ -1366,51 +1414,83 @@ export default function Taller(props) {
           refrescar(sl, i, ventana, Math.abs(dF) < 1.5);
           if (!sl.modo) continue;
           const a = N > 1 ? envolver(dF * st.alfa) : 0;
-          const c = (1 + Math.cos(a)) / 2;                 // 1 adelante, 0 al fondo
-          const fe = suave(Math.max(0, 1 - Math.abs(a) / st.alfa)); // 1 la activa, 0 desde la de al lado
-          const sc = 1 + st.boost * fe;
-          const x = st.RP * Math.sin(a), zz = st.RP * Math.cos(a);
+          const c = (1 + Math.cos(a)) / 2; // 1 al frente del anillo, 0 al fondo
+          // e: cuánto salió del anillo hacia el pedestal (1 = protagonista). Ligado al ángulo.
+          const e = N > 1 ? suave(Math.max(0, 1 - Math.abs(dF))) : 1;
+          const kP = kDe(sl.lay);
+          const sc = 1 + (kP - 1) * e;
+          // lugar en el anillo → tapa del pedestal, en arco: se abre hacia su lado por el piso y sube
+          // al pedestal recién en el último tramo (así a mitad de camino ninguna flota en el aire)
+          const rx = st.RP * Math.sin(a), rz = st.zc + st.RP * Math.cos(a);
+          const ab = Math.sin(Math.PI * e);
+          const x = rx * (1 - e) + Math.sign(a) * ab * LAT * (1 + kP) * 0.5;
+          const zz = rz + (st.ZP - rz) * e;
+          const sube = suave(Math.min(1, Math.max(0, (e - 0.5) / 0.42)));
+          const y = st.ringY + (st.HPed - st.ringY) * sube + Math.sin(Math.PI * sube) * ARCO * kP;
           sl.grupo.visible = true;
-          sl.grupo.position.set(x, HT, zz);
+          sl.grupo.position.set(x, y, zz);
           sl.pz.scale.setScalar(sc);
-          // mira a la cámara, con una leve rotación hacia la tangente (máx. ~30°) para que se sienta el giro
-          const giro = 0.52 * Math.sin(a);
+          sl.e = e;
+          sl.sc = sc;
+          // mira a la cámara, con una leve rotación hacia la tangente (máx. ~30°) mientras está en el anillo
+          const giro = 0.52 * Math.sin(a) * (1 - e);
           sl.pz.rotation.y = Math.atan2(camPos.x - x, camPos.z - zz) + giro;
-          const vaiven = 0.35 + 0.65 * fe;
+          const vaiven = 0.35 + 0.65 * e;
           sl.uni.tilt.value.set(st.tiltX * vaiven + giro * 1.6, st.tiltY * vaiven);
           const foto = sl.modo === "foto";
-          // siluetas: oscuras y tenues. Con muchas piezas, las fotos del borde de la ventana ya se
-          // parecen a una silueta, así el cambio de foto a silueta no se nota.
+          // anillo: más oscuro, 40% desaturado y desenfocado; protagonista: plena, nítida, con recorte
           const lejos = N > NVENT ? Math.min(1, Math.max(0, (Math.abs(dF) - (VENT - 1.5)) / 1.5)) : 0;
-          const luzSil = 0.34 + 0.2 * c, alfaSil = 0.42 + 0.3 * c;
-          const luzFoto = 0.5 + 0.5 * Math.pow(c, 1.3);
-          sl.uni.luz.value = foto ? luzFoto + (luzSil - luzFoto) * lejos : luzSil;
-          sl.uni.alfa.value = foto ? 1 + (alfaSil - 1) * lejos : alfaSil;
-          sl.uni.rim.value = foto ? fe * (1 - z * 0.5) : 0;
-          // la miniatura ya es borrosa de por sí: casi sin desenfoque extra (si no, queda un rectángulo)
-          sl.uni.blur.value = cal.dof ? (foto ? Math.min(1.8, Math.max(0, (1 - c) * 2.4 - 0.12)) * (1 - z) : 0.35) : 0;
-          // las de atrás se dibujan primero (transparentes, sin escribir profundidad)
-          const orden = 10 + 2 * Math.round((zz + 20) * 8);
+          const luzSil = 0.3 + 0.18 * c, alfaSil = 0.4 + 0.28 * c;
+          const luzAn = 0.58 + 0.2 * c;
+          const luzFoto = luzAn + (luzSil - luzAn) * lejos;
+          sl.uni.luz.value = foto ? luzFoto + (1.04 - luzFoto) * e : luzSil;
+          sl.uni.alfa.value = foto ? 1 + (alfaSil - 1) * lejos * (1 - e) : alfaSil;
+          sl.uni.sat.value = 0.6 + 0.4 * e;
+          sl.uni.rim.value = foto ? e * (1 - z * 0.5) : 0;
+          const blurAn = Math.min(1.8, Math.max(0, (1 - c) * 2.4 - 0.12)) + 0.35;
+          sl.uni.blur.value = cal.dof ? (foto ? blurAn * (1 - e) * (1 - z) : 0.35) : 0;
+          // orden de dibujo por distancia a la cámara (transparentes, sin escribir profundidad)
+          const orden = 10 + 2 * Math.round(Math.max(0, 400 - camPos.distanceTo(sl.grupo.position) * 4));
           sl.pieza.renderOrder = orden + 1;
           sl.halo.renderOrder = orden;
-          const g = sl.glow ? pulso : 0;
-          sl.uni.glow.value = sl.glow ? (0.35 + 0.45 * g) * (0.4 + 0.6 * c) : 0;
-          sl.uniHalo.glow.value = sl.glow ? (0.55 + 0.4 * g) * (0.3 + 0.7 * c) : 0;
-          if (sl.glow && c > glowC) {
-            glowSl = sl;
-            glowC = c;
+          // sombra de contacto en el piso (la protagonista hace sombra real sobre su pedestal)
+          const ct = sl.contacto;
+          ct.visible = sube < 0.98;
+          if (ct.visible) {
+            ct.position.set(x + sl.lay.shiftU * sc * 0.3, 0.008, zz);
+            ct.scale.set(sl.lay.wU * sc * 1.15, 1, sl.lay.wU * sc * 0.42);
+            ct.material.opacity = (foto ? 0.5 : 0.25) * (1 - sube) * (0.6 + 0.4 * c);
           }
+          const g = sl.glow ? pulso : 0;
+          const pesoG = Math.max(e, 0.25 * c);
+          sl.uni.glow.value = sl.glow ? (0.35 + 0.45 * g) * (0.4 + 0.6 * pesoG) : 0;
+          sl.uniHalo.glow.value = sl.glow ? (0.55 + 0.4 * g) * (0.3 + 0.7 * pesoG) : 0;
+          if (sl.glow && pesoG > glowC) {
+            glowSl = sl;
+            glowC = pesoG;
+          }
+          if (!prot || e > prot.e) prot = sl;
           visibles.push(sl);
+        }
+        // sombra marcada de la protagonista sobre la tapa del pedestal
+        ctProt.visible = !!prot && prot.e > 0.02;
+        if (ctProt.visible) {
+          const w = prot.lay.wU * prot.sc;
+          ctProt.position.set(prot.grupo.position.x + prot.lay.shiftU * prot.sc + 0.06 * w, st.HPed + 0.004, st.ZP - 0.04 * w);
+          ctProt.scale.set(w * 1.05, 1, w * 0.62);
+          ctProt.material.opacity = 0.6 * Math.pow(prot.e, 2);
         }
         let glowX = 0, glowY = 0;
         if (glowSl?.lay) {
-          glowSl.grupo.localToWorld(punto.position.set(0, glowSl.lay.hU * 0.45, 0.8));
+          const hG = glowSl.lay.hU * glowSl.sc;
+          glowSl.grupo.localToWorld(punto.position.set(0, hG * 0.45, 0.8));
           punto.intensity = (1.2 + 1.6 * pulso) * glowC;
-          [glowX, glowY] = detras(glowSl.grupo.position.x, HT + glowSl.lay.hU * 0.45, glowSl.grupo.position.z);
+          punto.distance = 7 * Math.max(1, glowSl.sc * 0.6);
+          [glowX, glowY] = detras(glowSl.grupo.position.x, glowSl.grupo.position.y + hG * 0.45, glowSl.grupo.position.z);
         } else punto.intensity = 0;
         uSet.uGlow.value.set(glowX, glowY, glowSl ? (0.75 + 0.25 * pulso) * Math.pow(glowC, 2) : 0, 0);
 
-        // ---------- pared + piso: la pieza activa (k0) y la que llega, según el ángulo ----------
+        // ---------- pared + piso: la protagonista (k0) y la que llega, según el ángulo ----------
         // k0 = la pieza de la que se partió; d = cuánto se giró desde ahí (−1..1). Al cruzar una pieza
         // entera el esmalte ya cubre todo y k0 avanza sin que se note. En reposo, k0 = la de adelante.
         if (!moviendo) st.k0 = base;
@@ -1420,16 +1500,15 @@ export default function Taller(props) {
         const iA = modN(st.k0, N), iB = modN(st.k0 + sg, N);
         ponerColores(coloresDe(piezas[iA]), coloresDe(piezas[iB]));
         uSet.uTime.value = tiempo;
-        // el esmalte nace en la pared, detrás de la pieza que llega (y la sigue mientras gira)
-        const aB = N > 1 ? sg * (1 - t) * st.alfa : 0;
+        // el esmalte nace en la pared, detrás de la pieza que llega (y la sigue mientras sale del anillo)
         const slB = slots[iB];
-        const hB = (slB?.lay?.hU || ALTO_REF) * escalaEn(aB);
-        const [cxE, cyE] = detras(st.RP * Math.sin(aB), HT + hB * 0.5, st.RP * Math.cos(aB));
+        const pB = slB.grupo.position;
+        const [cxE, cyE] = slB.modo ? detras(pB.x, pB.y + (slB.lay?.hU || ALTO_REF) * slB.sc * 0.5, pB.z) : [0, st.vistaH * 0.4];
         let cubre = 0;
         for (const [qx, qy] of [[-st.vistaW / 2, 0], [st.vistaW / 2, 0], [-st.vistaW / 2, st.vistaH], [st.vistaW / 2, st.vistaH], [-st.vistaW / 2, -st.zMax * 0.45], [st.vistaW / 2, -st.zMax * 0.45]])
           cubre = Math.max(cubre, Math.hypot(qx - cxE, qy - cyE));
         cubre += 2.2;
-        // radio lineal en t: el frente avanza 1:1 con el dedo (y al soltar sigue al mismo resorte que la mesa)
+        // radio lineal en t: el frente avanza 1:1 con el dedo (y al soltar sigue al mismo resorte)
         uSet.uEsm.value.set(N > 1 ? t : 0, t <= 0 ? -20 : -1.2 + (cubre + 1.2) * t, cxE, cyE);
 
         // la palabra: la actual se desliza en el sentido del giro y se funde; la nueva entra del otro lado
@@ -1451,7 +1530,7 @@ export default function Taller(props) {
         uPolvo.uTime.value = tiempo;
         uPolvo.uInt.value = 0.32 * (cal.polvo > 0 ? 1 : 0);
 
-        // sombras: solo cuando algo cambió (la mesa gira → las piezas se mueven)
+        // sombras: solo cuando algo cambió (el anillo gira → las piezas se mueven)
         if (st.sombraSucia || moviendo || zoomando || st.fundido > 0) {
           renderer.shadowMap.needsUpdate = true;
           st.sombraSucia = false;
@@ -1463,9 +1542,9 @@ export default function Taller(props) {
           medir();
         }
 
-        // rectángulo de la pieza activa (para tocarla y para que vuele al carrito) y aviso de "lista"
+        // rectángulo de la protagonista (para tocarla y para que vuele al carrito) y aviso de "lista"
         if (!moviendo && !zoomando && slF?.foto) {
-          const clave = [base, st.W, st.H, z.toFixed(2), slF.lay.wU].join("|");
+          const clave = [base, st.W, st.H, z.toFixed(2), slF.lay.wU, slF.sc.toFixed(3)].join("|");
           if (clave !== st.rectClave) {
             st.rectClave = clave;
             const b = caja(slF);
@@ -1555,6 +1634,7 @@ export default function Taller(props) {
         },
         actualizar() {
           for (const sl of slots) sl.clave = "";
+          pedTipo = "";
           rectPal.clear();
           medir();
         },
@@ -1584,7 +1664,6 @@ export default function Taller(props) {
         minis.clear();
         for (const e of palabras.values()) e.tex?.dispose();
         palabras.clear();
-        mesa?.userData.dispose();
         renderer.dispose();
         renderer.forceContextLoss?.();
       };
@@ -1598,7 +1677,7 @@ export default function Taller(props) {
 
   useEffect(() => { motor.current?.pausar(!!props.pausado); }, [props.pausado]);
   useEffect(() => { motor.current?.enfocar(!!props.enfoque); }, [props.enfoque]);
-  useEffect(() => { motor.current?.actualizar(); }, [props.piezas, props.mesa, props.vista?.w, props.vista?.h]);
+  useEffect(() => { motor.current?.actualizar(); }, [props.piezas, props.pedestal, props.vista?.w, props.vista?.h]);
 
   return (
     <div className="escena3d" aria-hidden>
