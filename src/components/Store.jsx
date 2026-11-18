@@ -843,13 +843,47 @@ function HojaMaquina({ products, actual, abierta, visible, reducido, onAbrir, on
     if (!cancelado && (d > 90 || v > 0.5)) onCerrar();
   };
 
+  // La cinta se abre con un toque (al soltar) o arrastrándola hacia arriba; baja 2 px mientras se aprieta
+  const cinta = useRef(null);
+  const cintaDown = (e) => {
+    if (e.button > 0) return;
+    cinta.current = { x: e.clientX, y: e.clientY, t: performance.now(), id: e.pointerId };
+    e.currentTarget.dataset.presionado = "1";
+    try { e.currentTarget.setPointerCapture(e.pointerId); } catch {}
+  };
+  const cintaFin = (e) => { delete e.currentTarget.dataset.presionado; cinta.current = null; };
+  const cintaMove = (e) => {
+    const g = cinta.current;
+    if (!g || g.id !== e.pointerId) return;
+    if (g.y - e.clientY > 28) { cintaFin(e); onAbrir(); }
+  };
+  const cintaUp = (e) => {
+    const g = cinta.current;
+    if (!g || g.id !== e.pointerId) return cintaFin(e);
+    const toque = performance.now() - g.t <= 400 && Math.hypot(e.clientX - g.x, e.clientY - g.y) <= 9;
+    cintaFin(e);
+    if (toque) setTimeout(onAbrir, 80); // la tecla alcanza a bajar y soltarse
+  };
+  const cintaCancel = (e) => cintaFin(e);
+
   return (
     <>
-      <button className={"catalogo-btn" + (visible && !abierta ? " visible" : "")} tabIndex={abierta ? -1 : 0} aria-label="Ver el catálogo completo" aria-hidden={abierta || undefined} {...toque(onAbrir)}>
+      <button
+        className={"catalogo-btn" + (visible && !abierta ? " visible" : "")}
+        tabIndex={abierta ? -1 : 0}
+        aria-label="Abrir catálogo completo"
+        aria-hidden={abierta || undefined}
+        onPointerDown={cintaDown}
+        onPointerMove={cintaMove}
+        onPointerUp={cintaUp}
+        onPointerCancel={cintaCancel}
+        onClick={(e) => e.detail === 0 && onAbrir()}
+      >
         <span className="catalogo-txt">
-          {visible ? <TipeoTinta texto="CATÁLOGO COMPLETO ↑" ms={62} demora={650} reducido={reducido} clave={TIPEO_KEY} />
-            : <span className="tipeo-resto">CATÁLOGO COMPLETO ↑</span>}
+          {visible ? <TipeoTinta texto="CATÁLOGO COMPLETO" ms={62} demora={650} reducido={reducido} clave={TIPEO_KEY} />
+            : <span className="tipeo-resto">CATÁLOGO COMPLETO</span>}
         </span>
+        <span className="catalogo-flecha" aria-hidden>↑</span>
       </button>
 
       <div
