@@ -792,6 +792,20 @@ function Pagar({ cart, settings, envios, vacaciones, pagos, onBack, onClose, fla
 const etiquetaDe = (b) => (b === "ultimas" ? "Últimas" : b ? "Nuevo" : "");
 const catDe = (c = "") => c.split(/[/·]/)[0].trim();
 const TIPEO_KEY = "tipificado-tipeo-catalogo";
+// Contorno de la placa de cerámica: un rectángulo de esquinas ~14 px con los bordes apenas ondulados
+// (siempre iguales: pseudoazar por posición), en px para el clip-path y el canto SVG.
+const frac = (i) => { const x = Math.sin((i + 1) * 78.233) * 43758.5453; return x - Math.floor(x); };
+function formaPlaca(W, H, r = 14) {
+  const o = (i) => (frac(i) * 1.2).toFixed(1), f = (n) => n.toFixed(1);
+  return `M${r},${o(0)} Q${f(W * 0.28)},${o(1)} ${f(W * 0.52)},${o(2)} Q${f(W * 0.78)},${o(3)} ${f(W - r)},${o(4)} `
+    + `C${f(W - r * 0.45)},${o(4)} ${f(W - frac(6) * 1.9)},${f(r * 0.45)} ${f(W - frac(6) * 1.9)},${r} `
+    + `Q${f(W - frac(7) * 1.9)},${f(H * 0.5)} ${f(W - frac(8) * 1.9)},${f(H - r)} `
+    + `C${f(W - frac(8) * 1.9)},${f(H - r * 0.45)} ${f(W - r * 0.45)},${f(H - frac(9) * 1.9)} ${f(W - r)},${f(H - frac(9) * 1.9)} `
+    + `Q${f(W * 0.7)},${f(H - frac(10) * 1.9)} ${f(W * 0.45)},${f(H - frac(11) * 1.9)} Q${f(W * 0.22)},${f(H - frac(12) * 1.9)} ${r},${f(H - frac(13) * 1.9)} `
+    + `C${f(r * 0.45)},${f(H - frac(13) * 1.9)} ${o(14)},${f(H - r * 0.45)} ${o(14)},${f(H - r)} `
+    + `Q${o(15)},${f(H * 0.5)} ${o(16)},${r} C${o(16)},${f(r * 0.45)} ${f(r * 0.45)},${o(0)} ${r},${o(0)} Z`;
+}
+
 function HojaMaquina({ products, actual, abierta, visible, reducido, onAbrir, onCerrar, onPick, settings }) {
   const cats = ["todo", ...new Set(products.map((p) => catDe(p.category)).filter(Boolean))];
   const [cat, setCat] = useState("todo");
@@ -865,6 +879,27 @@ function HojaMaquina({ products, actual, abierta, visible, reducido, onAbrir, on
     if (toque) setTimeout(onAbrir, 80); // la tecla alcanza a bajar y soltarse
   };
   const cintaCancel = (e) => cintaFin(e);
+  // La placa es de cerámica: el contorno se recalcula con su tamaño y, con mouse, el reflejo la sigue
+  const cuerpo = useRef(null);
+  const [forma, setForma] = useState(null);
+  useEffect(() => {
+    const el = cuerpo.current;
+    if (!el || typeof ResizeObserver === "undefined") return;
+    const ro = new ResizeObserver(() => {
+      const w = el.offsetWidth, h = el.offsetHeight;
+      if (w && h) setForma((f) => (f && f.w === w && f.h === h ? f : { w, h, d: formaPlaca(w, h) }));
+    });
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, []);
+  const placaMove = (e) => {
+    if (e.pointerType === "mouse") {
+      const rc = e.currentTarget.getBoundingClientRect();
+      e.currentTarget.style.setProperty("--mx", (((e.clientX - rc.left) / rc.width) * 100).toFixed(1) + "%");
+      e.currentTarget.style.setProperty("--my", (((e.clientY - rc.top) / rc.height) * 100).toFixed(1) + "%");
+    }
+    cintaMove(e);
+  };
 
   return (
     <>
@@ -874,16 +909,46 @@ function HojaMaquina({ products, actual, abierta, visible, reducido, onAbrir, on
         aria-label="Abrir catálogo completo"
         aria-hidden={abierta || undefined}
         onPointerDown={cintaDown}
-        onPointerMove={cintaMove}
+        onPointerMove={placaMove}
         onPointerUp={cintaUp}
         onPointerCancel={cintaCancel}
         onClick={(e) => e.detail === 0 && onAbrir()}
       >
-        <span className="catalogo-txt">
-          {visible ? <TipeoTinta texto="CATÁLOGO COMPLETO" ms={62} demora={650} reducido={reducido} clave={TIPEO_KEY} />
-            : <span className="tipeo-resto">CATÁLOGO COMPLETO</span>}
+        <span className="cp-sombra" aria-hidden />
+        <span className="cp-cuerpo" ref={cuerpo} style={forma ? { clipPath: `path('${forma.d}')` } : undefined}>
+          <span className="cp-esmalte" aria-hidden />
+          <span className="cp-volumen" aria-hidden />
+          <span className="cp-mouse" aria-hidden />
+          <span className="cp-reflejo" aria-hidden />
+          <span className="cp-flash" aria-hidden />
+          {forma && (
+            <svg className="cp-canto" width={forma.w} height={forma.h} viewBox={`0 0 ${forma.w} ${forma.h}`} aria-hidden>
+              <defs>
+                <linearGradient id="cp-pozo" gradientUnits="userSpaceOnUse" x1="0" y1={forma.h * 0.4} x2="0" y2={forma.h}>
+                  <stop offset="0" stopColor="#3a1a08" stopOpacity="0" />
+                  <stop offset="1" stopColor="#3a1a08" stopOpacity="0.42" />
+                </linearGradient>
+                <linearGradient id="cp-filo" gradientUnits="userSpaceOnUse" x1="0" y1="0" x2="0" y2={forma.h}>
+                  <stop offset="0" stopColor="#fff" stopOpacity="0.85" />
+                  <stop offset="0.4" stopColor="#fff" stopOpacity="0.14" />
+                  <stop offset="0.7" stopColor="#2a1206" stopOpacity="0.2" />
+                  <stop offset="1" stopColor="#2a1206" stopOpacity="0.62" />
+                </linearGradient>
+              </defs>
+              <path d={forma.d} fill="none" stroke="url(#cp-pozo)" strokeWidth="18" />
+              <path d={forma.d} fill="none" stroke="url(#cp-filo)" strokeWidth="5" />
+            </svg>
+          )}
+          <span className="cp-brillo" aria-hidden />
+          <span className="cp-surco" aria-hidden />
+          <span className="cp-contenido">
+            <span className="catalogo-txt">
+              {visible ? <TipeoTinta texto="CATÁLOGO COMPLETO" ms={62} demora={650} reducido={reducido} clave={TIPEO_KEY} />
+                : <span className="tipeo-resto">CATÁLOGO COMPLETO</span>}
+            </span>
+            <span className="catalogo-flecha" aria-hidden>↑</span>
+          </span>
         </span>
-        <span className="catalogo-flecha" aria-hidden>↑</span>
       </button>
 
       <div
