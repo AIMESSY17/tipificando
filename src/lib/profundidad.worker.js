@@ -3,7 +3,7 @@
 import { calcularProfundidad, anchoProfundidad } from "./profundidad-calc";
 
 self.onmessage = async (e) => {
-  const { id, blob, conProf } = e.data;
+  const { id, blob, conProf, perfil } = e.data;
   try {
     const bmp = await createImageBitmap(blob, { imageOrientation: "flipY", premultiplyAlpha: "premultiply", colorSpaceConversion: "none" });
     let prof = null;
@@ -13,7 +13,7 @@ self.onmessage = async (e) => {
       const c = new OffscreenCanvas(w, h);
       const x = c.getContext("2d", { willReadFrequently: true });
       x.drawImage(bmp, 0, 0, w, h);
-      prof = { w, h, data: calcularProfundidad(x.getImageData(0, 0, w, h).data, w, h) };
+      prof = { w, h, data: calcularProfundidad(x.getImageData(0, 0, w, h).data, w, h, perfil) };
     }
     self.postMessage({ id, bmp, prof }, prof ? [bmp, prof.data.buffer] : [bmp]);
   } catch (err) {

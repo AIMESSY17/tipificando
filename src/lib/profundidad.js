@@ -5,7 +5,7 @@
 // - Sin eso: <img> con img.decode() y la profundidad en el hilo principal cuando está libre.
 // La profundidad se calcula UNA vez por imagen y queda en memoria (Map por URL).
 // Las filas salen de abajo hacia arriba, igual que la textura de la pieza.
-import { calcularProfundidad, anchoProfundidad } from "./profundidad-calc";
+import { calcularProfundidad, anchoProfundidad, perfilDe } from "./profundidad-calc";
 import { cargarImagen } from "./fotos";
 
 const memo = new Map(); // url → Promise<{ w, h, data }>
@@ -63,7 +63,7 @@ function enWorker(src, respaldo) {
         mal(new Error("worker lento"));
       }, 4000);
       pendientes.set(id, { ok: (v) => (clearTimeout(tope), ok(v)), mal: (e) => (clearTimeout(tope), mal(e)) });
-      wk.postMessage({ id, blob, conProf });
+      wk.postMessage({ id, blob, conProf, perfil: perfilDe(src) });
     }).then(({ bmp, prof }) => {
       if (prof) memo.set(src, Promise.resolve(prof));
       return { bmp, flipY: false, ratio: bmp.width / bmp.height, prof: memo.get(src) };
@@ -71,7 +71,7 @@ function enWorker(src, respaldo) {
   });
 }
 
-function profEnHiloPrincipal(img) {
+function profEnHiloPrincipal(img, perfil) {
   return new Promise((ok, mal) => {
     const correr = () => {
       try {
@@ -84,7 +84,7 @@ function profEnHiloPrincipal(img) {
         x.translate(0, h);
         x.scale(1, -1);
         x.drawImage(img, 0, 0, w, h);
-        ok({ w, h, data: calcularProfundidad(x.getImageData(0, 0, w, h).data, w, h) });
+        ok({ w, h, data: calcularProfundidad(x.getImageData(0, 0, w, h).data, w, h, perfil) });
       } catch (e) {
         mal(e);
       }
@@ -97,7 +97,7 @@ function profEnHiloPrincipal(img) {
 async function enHiloPrincipal(src, respaldo) {
   const img = await cargarImagen(src, respaldo); // ya decodificada (img.decode())
   if (!memo.has(src)) {
-    const p = profEnHiloPrincipal(img);
+    const p = profEnHiloPrincipal(img, perfilDe(src));
     p.catch(() => memo.delete(src));
     memo.set(src, p);
   }
