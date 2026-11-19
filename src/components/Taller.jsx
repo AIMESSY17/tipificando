@@ -1,5 +1,5 @@
 "use client";
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, useState } from "react";
 import { input, escuchar } from "@/lib/inclinacion";
 import { prepararFoto } from "@/lib/profundidad";
 import { cargarImagen } from "@/lib/fotos";
@@ -603,6 +603,30 @@ function centroDe(bmp, invertida) {
   }
 }
 
+// Máscara de alfa (MASC px de ancho) para tocar la silueta real de la pieza y no el rectángulo de
+// la foto (que trae margen transparente). Fila 0 = arriba de la foto, ya derecha.
+const MASC = 96, MASC_UMBRAL = 60;
+function mascaraDe(bmp, invertida) {
+  try {
+    const W0 = bmp.width || bmp.naturalWidth, H0 = bmp.height || bmp.naturalHeight;
+    const w = MASC, h = Math.max(1, Math.round((w * H0) / W0));
+    const c = document.createElement("canvas");
+    c.width = w;
+    c.height = h;
+    const x = c.getContext("2d", { willReadFrequently: true });
+    x.drawImage(bmp, 0, 0, w, h);
+    const d = x.getImageData(0, 0, w, h).data;
+    const a = new Uint8Array(w * h);
+    for (let y = 0; y < h; y++) {
+      const fila = invertida ? h - 1 - y : y;
+      for (let i = 0; i < w; i++) a[fila * w + i] = d[(y * w + i) * 4 + 3] > MASC_UMBRAL ? 1 : 0;
+    }
+    return { w, h, a };
+  } catch {
+    return null;
+  }
+}
+
 // Miniatura (96 px) para las siluetas de las piezas lejanas
 function miniDe(T, bmp, flipY) {
   const W0 = bmp.width || bmp.naturalWidth, H0 = bmp.height || bmp.naturalHeight;
@@ -651,6 +675,8 @@ export default function Taller(props) {
   const pr = useRef(props);
   pr.current = props;
   const motor = useRef(null);
+  const refDebug = useRef(null);
+  const [debugToques] = useState(() => typeof window !== "undefined" && /(^|[?&])debug=toques(&|$)/.test(window.location.search));
 
   useEffect(() => {
     let vivo = true;
@@ -874,7 +900,7 @@ export default function Taller(props) {
           dep.magFilter = T.LinearFilter;
           dep.generateMipmaps = true;
           dep.needsUpdate = true;
-          Object.assign(e, { tex, dep, px: 1.5 / pd.w, ratio: foto.ratio || 1, cx: centroDe(foto.bmp, !foto.flipY) });
+          Object.assign(e, { tex, dep, px: 1.5 / pd.w, ratio: foto.ratio || 1, cx: centroDe(foto.bmp, !foto.flipY), masc: mascaraDe(foto.bmp, !foto.flipY) });
           if (urgente) subir(e);
           else subirLuego(e, url);
         })().catch((err) => {
@@ -891,7 +917,7 @@ export default function Taller(props) {
         cargarImagen(pz.sd, pz.hd)
           .then((img) => {
             if (!vivo) return;
-            minis.set(pz.sd, { ...miniDe(T, img, true), cx: centroDe(img, false) });
+            minis.set(pz.sd, { ...miniDe(T, img, true), cx: centroDe(img, false), masc: mascaraDe(img, false) });
             st.version++;
             pedirCuadro();
           })
@@ -1109,6 +1135,7 @@ export default function Taller(props) {
         sl.tieneSombra = modo === "foto";
         sl.halo.visible = sl.glow;
         sl.foto = modo === "foto" ? foto : null;
+        sl.masc = fuente.masc || null;
         st.sombraSucia = true;
         st.rectClave = "";
       };
@@ -1736,6 +1763,15 @@ export default function Taller(props) {
             parent?.style.setProperty("--pz-h", (b[3] - b[1]).toFixed(1) + "px");
           }
         }
+        // ?debug=toques: las zonas se recalculan cuando la escena queda quieta en otro lugar
+        if (capaDebug) {
+          const clave = moviendo || zoomando ? "" : [base, st.W, st.H, z.toFixed(2), st.version, visibles.length].join("|");
+          if (clave !== st.debugClave) {
+            st.debugClave = clave;
+            if (clave) pintarDebug();
+            else capaDebug.getContext("2d").clearRect(0, 0, capaDebug.width, capaDebug.height);
+          }
+        }
         // la escena ya está dibujada con la pieza del frente (y su palabra): se levanta el telón
         // y recién ahí se pide el resto (fotos 1600 del celu, las lejanas, miniaturas)
         if (!st.avisado && slF?.foto && (palabras.get(iF)?.tex || !piezas[iF]?.palabra)) {
@@ -1760,19 +1796,98 @@ export default function Taller(props) {
         return [x0, y0, x1, y1];
       };
 
-      // Tocar: ¿qué pieza hay en ese punto? (la de más adelante gana). La tienda la trae al frente.
+      // Tocar: ¿qué pieza hay en ese punto? Se toca la SILUETA tal como se ve: un rayo desde la
+      // cámara del último cuadro dibujado contra el plano de cada pieza (con su giro, escala y
+      // corrimiento reales), y en ese punto de la foto se mira el alfa, con MARGEN_TOQUE px de
+      // aire alrededor. Si dos se superponen gana la de más adelante. La tienda la trae al frente.
+      const MARGEN_TOQUE = 12;
+      const rayoL = new T.Ray(), invM = new T.Matrix4(), ndc = new T.Vector3();
+      const enSilueta = (sl, x, y) => {
+        if (!sl.grupo.visible || !sl.modo) return Infinity;
+        // rayo en el espacio de la pieza (z = 0 es su plano; x −0.5..0.5, y 0..1)
+        ndc.set((x / st.W) * 2 - 1, -(y / st.H) * 2 + 1, 0.5).unproject(cam);
+        rayoL.origin.copy(cam.position);
+        rayoL.direction.copy(ndc).sub(cam.position).normalize();
+        invM.copy(sl.pieza.matrixWorld).invert();
+        rayoL.applyMatrix4(invM);
+        const dz = rayoL.direction.z;
+        if (Math.abs(dz) < 1e-6) return Infinity;
+        const t = -rayoL.origin.z / dz;
+        if (t <= 0) return Infinity;
+        const u = rayoL.origin.x + rayoL.direction.x * t + 0.5, v = rayoL.origin.y + rayoL.direction.y * t;
+        // el margen en unidades de la foto: px de pantalla → fracción del ancho / alto proyectado
+        const [x0, y0, x1, y1] = caja(sl);
+        const mu = MARGEN_TOQUE / Math.max(1, x1 - x0), mv = MARGEN_TOQUE / Math.max(1, y1 - y0);
+        if (u < -mu || u > 1 + mu || v < -mv || v > 1 + mv) return Infinity;
+        const dist = camPos.distanceTo(sl.grupo.position);
+        const m = sl.masc;
+        if (!m) return u >= 0.12 && u <= 0.88 && v >= 0 && v <= 0.92 ? dist : Infinity; // sin máscara: el centro del rectángulo
+        // ¿hay pieza a menos de MARGEN_TOQUE px? (elipse en píxeles de la máscara)
+        const cx = u * m.w, cy = (1 - v) * m.h, rx = Math.max(0.5, mu * m.w), ry = Math.max(0.5, mv * m.h);
+        const i0 = Math.max(0, Math.floor(cx - rx)), i1 = Math.min(m.w - 1, Math.ceil(cx + rx));
+        const j0 = Math.max(0, Math.floor(cy - ry)), j1 = Math.min(m.h - 1, Math.ceil(cy + ry));
+        const ci = Math.floor(cx), cj = Math.floor(cy);
+        if (ci >= 0 && ci < m.w && cj >= 0 && cj < m.h && m.a[cj * m.w + ci]) return dist;
+        for (let j = j0; j <= j1; j++) {
+          const dy = (j + 0.5 - cy) / ry;
+          if (dy * dy > 1) continue;
+          for (let i = i0; i <= i1; i++) {
+            const dx = (i + 0.5 - cx) / rx;
+            if (dx * dx + dy * dy <= 1 && m.a[j * m.w + i]) return dist;
+          }
+        }
+        return Infinity;
+      };
+      // px del cliente → px de la escena (si el canvas cambió de tamaño y todavía no se volvió a medir)
+      const aEscena = (clientX, clientY) => {
+        const r = canvas.getBoundingClientRect();
+        return [((clientX - r.left) * st.W) / Math.max(1, r.width), ((clientY - r.top) * st.H) / Math.max(1, r.height)];
+      };
+      const piezaEn = (x, y) => {
+        let mejor = -1, dMin = Infinity;
+        for (const sl of visibles) {
+          const d = enSilueta(sl, x, y);
+          if (d < dMin) {
+            dMin = d;
+            mejor = sl.i;
+          }
+        }
+        return mejor;
+      };
       rec.tocar = (clientX, clientY) => {
         if (!st.W) return -1;
-        const r = canvas.getBoundingClientRect();
-        const x = clientX - r.left, y = clientY - r.top;
-        const orden = [...visibles].sort((a, b) => b.pieza.renderOrder - a.pieza.renderOrder);
-        for (const sl of orden) {
+        const [x, y] = aEscena(clientX, clientY);
+        return piezaEn(x, y);
+      };
+
+      // ?debug=toques: pinta encima de la escena las zonas que responden al toque (calculadas con
+      // la misma función que usa el toque, punto por punto), cada pieza de un color
+      const capaDebug = refDebug.current; // solo existe con ?debug=toques
+      const COL_DEBUG = ["#ff2d55", "#00c7be", "#ffcc00", "#5856d6", "#34c759", "#ff9500", "#af52de", "#007aff", "#ff3b30", "#30d158", "#64d2ff"];
+      const pintarDebug = () => {
+        if (!capaDebug || !st.W) return;
+        const PASO = 3;
+        capaDebug.width = st.W;
+        capaDebug.height = st.H;
+        const g = capaDebug.getContext("2d");
+        g.clearRect(0, 0, st.W, st.H);
+        for (let y = 0; y < st.H; y += PASO)
+          for (let x = 0; x < st.W; x += PASO) {
+            const i = piezaEn(x + PASO / 2, y + PASO / 2);
+            if (i < 0) continue;
+            g.fillStyle = COL_DEBUG[i % COL_DEBUG.length] + "66";
+            g.fillRect(x, y, PASO, PASO);
+          }
+        g.font = "bold 12px monospace";
+        for (const sl of visibles) {
           if (!sl.grupo.visible) continue;
           const [x0, y0, x1, y1] = caja(sl);
-          const mx = (x1 - x0) * 0.12; // las fotos tienen aire alrededor: se toca un poco adentro
-          if (x >= x0 + mx && x <= x1 - mx && y >= y0 + (y1 - y0) * 0.08 && y <= y1) return sl.i;
+          g.strokeStyle = COL_DEBUG[sl.i % COL_DEBUG.length];
+          g.setLineDash([4, 3]);
+          g.strokeRect(x0, y0, x1 - x0, y1 - y0);
+          g.fillStyle = g.strokeStyle;
+          g.fillText(String(sl.i), x0 + 3, y0 + 13);
         }
-        return -1;
       };
 
       // ---------- Eventos ----------
@@ -1895,6 +2010,7 @@ export default function Taller(props) {
   return (
     <div className="escena3d" aria-hidden>
       <canvas ref={ref} />
+      {debugToques && <canvas ref={refDebug} className="debug-toques" />}
     </div>
   );
 }

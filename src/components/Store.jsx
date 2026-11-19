@@ -4,6 +4,7 @@ import { EscenaAuto } from "./Escena";
 import { Loader } from "./Effects";
 import { Logo } from "./Logo";
 import { Tipeo, TipeoTinta, PieHoja, PieLados } from "./Hoja";
+import { GuiaAbrir } from "./GuiaAbrir";
 import { money, isLight, orderText, vivo } from "@/lib/format";
 import { precioDe, enOferta, primerColorLibre, nombreEnvio, detalleEnvio, costoEnvio, copiaEnvio, normalizarCodigo } from "@/lib/precios";
 import { PROVINCIAS, MODALIDADES, normalizarCp } from "@/lib/envio";
@@ -14,6 +15,7 @@ import { Recorrido, modN } from "@/lib/recorrido";
 
 const CART_KEY = "tipificado-carrito";
 const PISTA_KEY = "tipificado-deslizo";
+const GUIA_KEY = "tipificado-guia-abrir";
 const MESA_DEF = "#e6ded2";
 const palabraDe = (p) => (p.word || p.name.split(/[\s/]+/).sort((a, b) => b.length - a.length)[0] || "").toUpperCase();
 const fechaLarga = (iso) => new Date(iso + "T12:00").toLocaleDateString("es-AR", { day: "numeric", month: "long" });
@@ -99,6 +101,10 @@ export default function Store({ products, settings, envios = [], inicial = 0, mo
   const [toast, setToast] = useState(null);
   const [sin3d, setSin3d] = useState(false);
   const [enVuelo, setEnVuelo] = useState(0); // piezas volando a la taza (el número sube cuando caen)
+  const [tiro, setTiro] = useState(null); // abrir la ficha arrastrando hacia arriba: null | "tirando" | "abre" | "vuelve"
+  const [sinEntrada, setSinEntrada] = useState(false); // la ficha ya entró con el dedo: sin la animación de entrada
+  const [guia, setGuia] = useState(false); // mini guía del gesto (primera visita, celu)
+  const tiroT = useRef(0);
   const cartBtn = useRef(null);
   const drag = useRef(null);
   const rueda = useRef({ x: 0, t: 0 });
@@ -185,8 +191,21 @@ export default function Store({ products, settings, envios = [], inicial = 0, mo
 
   // =================== Ficha (con la cámara que se acerca a la pieza) ===================
   const abrirFicha = (i) => {
+    clearTimeout(tiroT.current);
+    setTiro(null);
+    setSinEntrada(false);
     setCerrando(false);
     setSheet(i);
+  };
+  // Al soltar el arrastre: la ficha termina de subir (abre) o vuelve a bajar y se va
+  const soltarTiro = (abre) => {
+    setTiro(abre ? "abre" : "vuelve");
+    clearTimeout(tiroT.current);
+    tiroT.current = setTimeout(() => {
+      setTiro(null);
+      if (abre) setSinEntrada(true);
+      else setSheet(null);
+    }, reduced ? 0 : 280);
   };
   const cerrarFicha = () => {
     if (reduced) return setSheet(null);
@@ -197,7 +216,34 @@ export default function Store({ products, settings, envios = [], inicial = 0, mo
       setCerrando(false);
     }, 320);
   };
-  const fichaAbierta = sheet !== null && !cerrando;
+  // mientras el dedo la arrastra la cámara no se acerca: recién cuando se suelta y abre
+  const fichaAbierta = sheet !== null && !cerrando && (tiro === null || tiro === "abre");
+
+  // =================== Mini guía: «deslizá para abrir ↑» ===================
+  // Primera visita en el celu: ~1,5 s después de que aparece la escena, una vez. Se va al primer
+  // toque o arrastre, o sola a los ~5 s, y no vuelve (localStorage).
+  useEffect(() => {
+    if (loading) return;
+    let ya = false;
+    try { ya = localStorage.getItem(GUIA_KEY) === "1"; } catch {}
+    if (ya || !window.matchMedia("(pointer: coarse)").matches) return;
+    const t = setTimeout(() => {
+      setGuia(true);
+      try { localStorage.setItem(GUIA_KEY, "1"); } catch {}
+    }, 1500);
+    return () => clearTimeout(t);
+  }, [loading]);
+  useEffect(() => {
+    if (!guia) return;
+    const fuera = () => setGuia(false);
+    const t = setTimeout(fuera, 5000);
+    window.addEventListener("pointerdown", fuera, true);
+    return () => {
+      clearTimeout(t);
+      window.removeEventListener("pointerdown", fuera, true);
+    };
+  }, [guia]);
+  const muestraGuia = guia && sheet === null && !panel;
 
   // =================== El gesto ===================
   const bloqueado = sheet !== null || !!panel;
@@ -233,29 +279,63 @@ export default function Store({ products, settings, envios = [], inicial = 0, mo
   };
 
   // Deslizar: el anillo gira con el dedo 1:1 (horizontal). Agarrar frena cualquier giro en curso.
+  // Sobre la protagonista, arrastrar hacia ARRIBA (mayormente vertical) abre la ficha, que sube
+  // con el dedo; se abre si se suelta pasado ~30% del recorrido o con velocidad hacia arriba.
+  // Toque corto = tocar. La placa del catálogo es un botón: tiene su propio gesto.
   const onDown = (e) => {
     if (e.button > 0 || bloqueado || e.target.closest("button, a, input, textarea, select, .capa, .nav-taller, .hoja-maquina")) return (drag.current = null);
     pedirGiroscopio();
     const t = e.timeStamp || performance.now();
-    drag.current = { x: e.clientX, y: e.clientY, id: e.pointerId, eje: null, enPieza: !!e.target.closest(".pieza-activa"), t0: performance.now() };
+    const enPieza = rec.tocar ? rec.tocar(e.clientX, e.clientY) === activo.current : !!e.target.closest(".pieza-activa");
+    drag.current = { x: e.clientX, y: e.clientY, id: e.pointerId, eje: null, enPieza, t0: performance.now() };
     rec.agarrar(e.clientX, t);
+  };
+  // recorrido del arrastre que abre la ficha: su alto (en la compu entra de costado: medio alto)
+  const recorridoFicha = () => {
+    const f = document.querySelector(".capa-ficha .ficha");
+    const alto = window.innerWidth >= 900 ? window.innerHeight * 0.5 : f?.offsetHeight || window.innerHeight * 0.5;
+    return Math.max(160, alto);
   };
   const onMove = (e) => {
     const g = drag.current;
     if (!g || e.pointerId !== g.id) return;
     const dx = e.clientX - g.x, dy = e.clientY - g.y;
+    const t = e.timeStamp || performance.now();
     if (!g.eje) {
       if (Math.max(Math.abs(dx), Math.abs(dy)) < MOVER) return;
-      g.eje = Math.abs(dx) >= Math.abs(dy) * 0.9 ? "x" : "y";
+      g.eje = g.enPieza && dy < 0 && -dy > Math.abs(dx) * 1.2 ? "abrir" : Math.abs(dx) >= Math.abs(dy) * 0.9 ? "x" : "y";
       try { e.currentTarget.setPointerCapture(e.pointerId); } catch {}
+      if (g.eje === "abrir") {
+        rec.soltar(t, true);
+        g.y0 = e.clientY;
+        g.p = 0;
+        g.muestras = [{ y: e.clientY, t }];
+        abrirFicha(activo.current);
+        setTiro("tirando");
+      }
     }
-    if (g.eje === "x" && N > 1) rec.arrastrar(e.clientX, e.timeStamp || performance.now());
+    if (g.eje === "abrir") {
+      g.muestras.push({ y: e.clientY, t });
+      while (g.muestras.length > 2 && t - g.muestras[1].t > 120) g.muestras.shift();
+      g.p = Math.min(1, Math.max(0, (g.y0 - e.clientY) / recorridoFicha()));
+      document.querySelector(".capa-ficha")?.style.setProperty("--tiro", g.p.toFixed(4));
+      return;
+    }
+    if (g.eje === "x" && N > 1) rec.arrastrar(e.clientX, t);
   };
   const onUp = (e, cancelado) => {
     const g = drag.current;
     if (!g || e.pointerId !== g.id) return;
     drag.current = null;
     const t = e.timeStamp || performance.now();
+    if (g.eje === "abrir") {
+      // velocidad hacia arriba (px/ms) en los últimos ~120 ms, hasta el momento de soltar: si el
+      // dedo se frenó antes de soltar, no cuenta
+      const a = g.muestras.find((m) => t - m.t <= 120) || g.muestras[g.muestras.length - 1];
+      const v = a && t > a.t ? (a.y - e.clientY) / (t - a.t) : 0;
+      soltarTiro(!cancelado && (g.p > 0.3 || v > 0.45));
+      return;
+    }
     if (g.eje !== "x") {
       rec.soltar(t, true);
       // tocar = el dedo casi no se movió y se levantó rápido (también con la mesa todavía girando):
@@ -391,8 +471,10 @@ export default function Store({ products, settings, envios = [], inicial = 0, mo
       )}
       <footer className="pie"><PieLados settings={settings} /></footer>
 
+      {muestraGuia && <GuiaAbrir reducido={reduced} />}
+
       {sheet !== null && (
-        <Ficha prod={products[sheet]} settings={settings} flash={flash} vacaciones={vacaciones} con3d={!sin3d} cerrando={cerrando} onClose={cerrarFicha} onAdd={add} />
+        <Ficha prod={products[sheet]} settings={settings} flash={flash} vacaciones={vacaciones} con3d={!sin3d} cerrando={cerrando} tiro={tiro} sinEntrada={sinEntrada} onClose={cerrarFicha} onAdd={add} />
       )}
       {panel === "carrito" && (
         <Carrito cart={cart} setCart={setCart} vacaciones={vacaciones} onClose={() => setPanel(null)} onPay={() => setPanel("pagar")} />
@@ -424,7 +506,15 @@ async function compartir(prod, flash) {
   }
 }
 
-function Ficha({ prod, settings, flash, vacaciones, con3d, cerrando, onClose, onAdd }) {
+function Ficha({ prod, settings, flash, vacaciones, con3d, cerrando, tiro, sinEntrada, onClose, onAdd }) {
+  // El toque que abrió la ficha genera después un click en el mismo punto, que ya cae sobre el
+  // fondo recién aparecido: ese click no la cierra (antes la cerraba al instante y solo "andaba"
+  // tocar la pieza bien abajo, donde el click caía sobre la hoja).
+  const [abierta0] = useState(() => performance.now());
+  const cerrarFondo = () => {
+    if (performance.now() - abierta0 < 500 || tiro) return;
+    onClose();
+  };
   const libre = primerColorLibre(prod);
   const [color, setColor] = useState(libre?.name || prod.colors?.[0]?.name || "Único");
   const [qty, setQty] = useState(1);
@@ -437,7 +527,11 @@ function Ficha({ prod, settings, flash, vacaciones, con3d, cerrando, onClose, on
   const agotada = prod.colors?.length > 0 && !libre;
   const conFoto = !con3d || !!sel?.image_url;
   return (
-    <div className={"capa capa-ficha" + (con3d ? " con-3d" : "") + (cerrando ? " cerrando" : "")} onClick={onClose}>
+    <div
+      className={"capa capa-ficha" + (con3d ? " con-3d" : "") + (cerrando ? " cerrando" : "") + (tiro ? " tiro tiro-" + tiro : "") + (sinEntrada ? " sin-entrada" : "")}
+      style={tiro === "abre" ? { "--tiro": 1 } : tiro === "vuelve" ? { "--tiro": 0 } : undefined}
+      onClick={cerrarFondo}
+    >
       <div className={"hoja ficha" + (conFoto ? "" : " sin-foto")} onClick={(e) => e.stopPropagation()} role="dialog" aria-label={prod.name}>
         <button className="cerrar" onClick={onClose} aria-label="Cerrar">×</button>
         {conFoto && (
