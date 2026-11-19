@@ -174,6 +174,7 @@ input, textarea, select { -webkit-user-select: text; user-select: text; -webkit-
 .pie a.pie-izq { font-size: 14px; line-height: 16px; bottom: calc(2px + env(safe-area-inset-bottom)); opacity: 1;
   text-shadow: 0 1px 0 color-mix(in oklch, var(--mesa) 75%, transparent), 0 0 3px color-mix(in oklch, var(--mesa) 55%, transparent); }
 @media (max-width: 899px) { .pie a.pie-der { bottom: calc(3px + env(safe-area-inset-bottom)); } } /* deja aire bajo la placa */
+@media (max-width: 767px) { .pie a.pie-izq, .pie a.pie-der { bottom: calc(8px + env(safe-area-inset-bottom)); } } /* celular: en su lugar de siempre */
 @media (min-width: 900px) { .pie a.pie-izq { font-size: 16px; line-height: 18px; bottom: calc(10px + env(safe-area-inset-bottom)); } }
 .pie a:hover { opacity: 1; text-decoration: underline; text-underline-offset: 2px; }
 .pie-izq { left: 14px; }
@@ -352,6 +353,12 @@ input, textarea, select { -webkit-user-select: text; user-select: text; -webkit-
 .catalogo-btn:active .cp-sombra, .catalogo-btn[data-presionado] .cp-sombra { transform: translateY(-2px) scale(0.93, 0.7); opacity: 0.8; }
 .catalogo-btn:focus-visible { outline: 2px solid var(--ink-p); outline-offset: 4px; border-radius: 16px; }
 @media (min-width: 900px) { .catalogo-btn { --alto: 91px; bottom: calc(38px + env(safe-area-inset-bottom)); } .catalogo-txt, .catalogo-flecha { font-size: 38px; } }
+/* celular: la placa vuelve a su tamaño de antes (72 px, sello ~25 px a 375 px de ancho); 2 px más abajo
+   que antes (32 en vez de 34) para dejar ≥ 12 px de aire bajo «Elegir color» en 375×812 */
+@media (max-width: 767px) {
+  .catalogo-btn { --alto: 72px; bottom: calc(32px + env(safe-area-inset-bottom)); width: min(calc(100% - 32px), 560px); }
+  .catalogo-txt, .catalogo-flecha { font-size: clamp(20px, 6.6vw, 32px); }
+}
 @media (prefers-reduced-motion: reduce) { .catalogo-flecha { animation: none; } .cp-reflejo, .cp-flash { display: none; } }
 
 .hoja-maquina { position: absolute; left: 0; right: 0; bottom: 0; height: 100dvh; z-index: 90; visibility: hidden; pointer-events: none;
