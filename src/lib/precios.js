@@ -1,5 +1,6 @@
 // Precios, cupones y envíos: lógica pura y compartida.
 // El SERVIDOR la usa para cobrar (api/checkout, api/cotizar); el navegador solo para mostrar.
+import { mensajeSinStock } from "./stock";
 
 export const VENTA = ["pagado", "en produccion", "enviado", "entregado"]; // estados que cuentan como venta
 export const ESTADOS = ["pendiente", "pagado", "en produccion", "enviado", "entregado", "cancelado", "rechazado", "devuelto"];
@@ -61,8 +62,25 @@ export function detalleEnvio(op) {
 export const copiaEnvio = (op) => (op ? { id: op.id, kind: op.kind, name: nombreEnvio(op), detalle: detalleEnvio(op), price: costoEnvio(op) } : null);
 
 // ---------- Carrito ----------
-// Arma los ítems con los precios de la base (nunca los del navegador)
+// Arma los ítems con los precios de la base (nunca los del navegador).
+// Si una pieza con control de stock no alcanza (sumando todos sus colores), devuelve
+// sinStock = [{ id, name, agotada }] — sin decir cuántas quedan. La verificación definitiva
+// (con la fila bloqueada) la hace la base al crear el pedido.
 export function armarItems(products, reqItems) {
+  const r = armarItemsSinStock(products, reqItems);
+  if (r.error) return r;
+  const porPieza = new Map();
+  for (const it of r.items) porPieza.set(String(it.id), (porPieza.get(String(it.id)) || 0) + it.qty);
+  const sinStock = [];
+  for (const [id, qty] of porPieza) {
+    const p = products.find((x) => String(x.id) === id);
+    if (p && p.stock != null && Number(p.stock) < qty) sinStock.push({ id: p.id, name: p.name, agotada: Number(p.stock) <= 0 });
+  }
+  if (sinStock.length) return { error: mensajeSinStock(sinStock), sinStock };
+  return r;
+}
+
+function armarItemsSinStock(products, reqItems) {
   const byId = new Map(products.flatMap((p) => [[String(p.id), p], [p.slug, p]]));
   const items = [];
   for (const it of (Array.isArray(reqItems) ? reqItems : []).slice(0, 30)) {

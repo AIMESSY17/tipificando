@@ -76,6 +76,7 @@ function Panel({ db, session }) {
   const [version, setVersion] = useState(0); // sube cuando cambian los pedidos (para recargar listas)
   const [nuevos, setNuevos] = useState(0);
   const [aviso, setAviso] = useState(null);
+  const [filtroPiezas, setFiltroPiezas] = useState(null); // la tarjeta «Stock» de Inicio abre Piezas ya filtrada
   const [confirmar, uiConfirmar] = useConfirmar();
   const tAviso = useRef(0);
 
@@ -138,10 +139,11 @@ function Panel({ db, session }) {
     db, session, toast, confirmar, api, refrescarTienda, version,
     cambio: () => setVersion((v) => v + 1),
     abrirPedido: (id) => setPedido(id),
-    irA: (t) => { setTab(t); window.scrollTo(0, 0); },
-  }), [db, session, toast, confirmar, api, refrescarTienda, version]);
+    irA: (t, opc) => { setFiltroPiezas(opc?.filtro || null); setTab(t); window.scrollTo(0, 0); },
+    filtroPiezas,
+  }), [db, session, toast, confirmar, api, refrescarTienda, version, filtroPiezas]);
 
-  const ir = (t) => { setTab(t); window.scrollTo(0, 0); };
+  const ir = (t) => { setFiltroPiezas(null); setTab(t); window.scrollTo(0, 0); };
   const tabMovil = MAS.includes(tab) ? "mas" : tab;
 
   return (

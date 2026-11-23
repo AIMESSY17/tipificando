@@ -388,3 +388,52 @@
 .adm-despacho-fila { display: grid; grid-template-columns: 1fr auto; gap: 8px; }
 .adm-tres { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; }
 .adm-tres label { min-width: 0; }
+
+/* ---------- Stock ---------- */
+.adm-stock-ins { flex: none; display: inline-flex; align-items: center; gap: 4px; border-radius: 99px; padding: 2px 8px 2px 2px; font-size: 11px; font-weight: 700; line-height: 1; }
+.adm-stock-ins b { min-width: 22px; height: 18px; padding: 0 5px; border-radius: 99px; display: grid; place-items: center; background: #fff; font-size: 12px; font-variant-numeric: tabular-nums; }
+.adm-stock-ins em { font-style: normal; padding: 3px 0; white-space: nowrap; }
+.adm-stock-ins:not(:has(b)) { padding-left: 8px; }
+.ins-stock-hay { background: #dcf5e3; color: #1b7a36; }
+.ins-stock-ultimas { background: #ffe9cc; color: #b35900; }
+.ins-stock-sin { background: #ffe0de; color: #c4271d; }
+.ins-stock-libre { background: #ececf0; color: #6c6c70; }
+.adm-insignias .adm-stock-ins { font-size: 10.5px; }
+.adm-insignias .adm-stock-ins em { padding: 2px 0; background: none !important; color: inherit !important; font-size: inherit; }
+/* Inicio: con la tarjeta de stock al final, «Ticket promedio» ocupa todo el ancho (como antes) */
+@media (max-width: 639px) { .adm-tarjetas > .adm-tarjeta:nth-child(4):nth-last-child(2) { grid-column: 1 / -1; } }
+
+.adm-stock-editor { background: #fff; border-radius: 12px; padding: 14px; display: grid; gap: 10px; }
+.adm-stock-editor > label { font-size: 13px; font-weight: 600; color: var(--gris2); }
+.adm-stock-fila { display: grid; grid-template-columns: 58px 1fr 58px; gap: 10px; align-items: center; }
+.adm-stock-fila button { height: 58px; border-radius: 16px; background: var(--fondo); font-size: 30px; font-weight: 500; color: var(--azul); line-height: 1; }
+.adm-stock-fila button:disabled { color: #c7c7cc; }
+.adm-stock-fila button:active:not(:disabled) { background: #e5e5ea; }
+.adm-grupo .adm-stock-fila input { height: 58px; text-align: center; font-size: 34px; font-weight: 700; letter-spacing: -0.02em; font-variant-numeric: tabular-nums; background: var(--fondo); padding: 0 8px; }
+.adm-stock-vista { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; font-size: 13.5px; color: var(--gris2); margin: 0; }
+.adm-stock-editor .adm-ayuda { margin: 0; padding: 0; }
+
+.adm-stock-hist { background: #fff; border-radius: 12px; padding: 12px 14px 8px; }
+.adm-stock-hist-tit { font-size: 13px; font-weight: 600; color: var(--gris2); margin: 0 0 4px; }
+.adm-stock-hist ul { list-style: none; margin: 0; padding: 0; }
+.adm-stock-hist li { display: flex; justify-content: space-between; align-items: center; gap: 10px; padding: 8px 0; border-top: 1px solid var(--linea); font-size: 15px; }
+.adm-stock-hist li:first-child { border-top: 0; }
+.adm-stock-hist li > span { display: grid; gap: 1px; }
+.adm-stock-hist li small { font-size: 12px; color: var(--gris); }
+.adm-stock-hist li b { font-variant-numeric: tabular-nums; font-size: 16px; }
+.adm-stock-hist li b.mas { color: #1b7a36; }
+.adm-stock-hist li b.menos { color: var(--texto); }
+
+.adm-tarjeta-stock { grid-column: 1 / -1; }
+.adm-tarjeta-stock small span { font-weight: 500; color: var(--gris); font-size: 12px; }
+.adm-tarjeta-stock.vacia span { font-size: 13px; line-height: 1.4; }
+.adm-stock-dos { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-top: 6px; }
+.adm-stock-dos button { display: grid; grid-template-columns: auto 1fr auto; align-items: center; gap: 8px; text-align: left; padding: 10px 12px; border-radius: 12px; }
+.adm-stock-dos button b { font-size: 26px; }
+.adm-stock-dos button span { font-size: 12.5px; font-weight: 600; color: inherit; line-height: 1.2; }
+.adm-stock-dos button i { font-style: normal; font-size: 18px; opacity: 0.5; }
+.adm-stock-dos .naranja { background: #fff3e0; color: #b35900; }
+.adm-stock-dos .rojo { background: #ffecea; color: #c4271d; }
+.adm-stock-dos .cero { background: var(--fondo); color: var(--gris2); }
+
+.adm-umbral input { width: 76px !important; flex: none; text-align: center; font-size: 20px !important; font-weight: 700; background: var(--fondo) !important; padding: 8px !important; }

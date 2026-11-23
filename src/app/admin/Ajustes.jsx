@@ -1,6 +1,7 @@
 "use client";
 import { useEffect, useState } from "react";
 import { useAdm, useDatos, q, fechaLarga, hace, Titulo, Esqueleto, ErrorCarga, Interruptor, Segmento, mensajeError } from "./ui";
+import { umbralDe } from "@/lib/stock";
 
 const TEXTOS = [
   ["tagline", "Frase de arriba de la tienda", 2],
@@ -21,7 +22,7 @@ export default function Ajustes() {
   const [v, setV] = useState(null);
   const [busy, setBusy] = useState(false);
   const [sucio, setSucio] = useState(false);
-  useEffect(() => { if (datos.data) setV({ ...datos.data, vacaciones: { activo: false, vuelta: "", mensaje: "", ...(datos.data.vacaciones || {}) } }); }, [datos.data]);
+  useEffect(() => { if (datos.data) setV({ ...datos.data, stock_umbral: String(umbralDe(datos.data)), vacaciones: { activo: false, vuelta: "", mensaje: "", ...(datos.data.vacaciones || {}) } }); }, [datos.data]);
   const set = (k, x) => { setV((s) => ({ ...s, [k]: x })); setSucio(true); };
   const setVac = (k, x) => set("vacaciones", { ...v.vacaciones, [k]: x });
 
@@ -33,6 +34,7 @@ export default function Ajustes() {
       ...claves.map((k) => ({ key: k, value: String(v[k] ?? "").trim().replace(/^@/, k === "instagram" ? "" : "@") })),
       { key: "pedestal", value: v.pedestal || "travertino" },
       { key: "vacaciones", value: v.vacaciones },
+      { key: "stock_umbral", value: umbralDe({ stock_umbral: v.stock_umbral }) },
     ];
     const { error } = await db.from("settings").upsert(rows);
     setBusy(false);
@@ -75,6 +77,16 @@ export default function Ajustes() {
                   : <input value={v[k] || ""} onChange={(e) => set(k, e.target.value)} placeholder={k === "whatsapp" ? "ej: 11 5555 5555" : ""} inputMode={k === "whatsapp" ? "tel" : undefined} />}
               </label>
             ))}
+          </div>
+
+          <p className="adm-label">Stock</p>
+          <div className="adm-grupo">
+            <label className="adm-check adm-umbral">
+              <span>Mostrar «últimas unidades» cuando queden menos de:<small>El comprador nunca ve el número. Con 0 se ve «sin stock» y no se puede comprar.</small></span>
+              <input type="text" inputMode="numeric" pattern="[0-9]*" value={v.stock_umbral ?? "10"} aria-label="Umbral de últimas unidades"
+                onChange={(e) => set("stock_umbral", e.target.value.replace(/\D/g, "").slice(0, 4))}
+                onBlur={(e) => set("stock_umbral", String(umbralDe({ stock_umbral: e.target.value })))} />
+            </label>
           </div>
 
           <p className="adm-label">Pedestal de la tienda <small>(cada pieza puede cambiarlo)</small></p>

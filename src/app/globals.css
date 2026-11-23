@@ -609,3 +609,17 @@ input, textarea, select { -webkit-user-select: text; user-select: text; -webkit-
   font-family: var(--f-mono); font-size: 11px; font-weight: 600; letter-spacing: 0.12em; white-space: nowrap;
   text-shadow: 0 0 6px color-mix(in oklch, var(--mesa) 85%, transparent), 0 1px 0 color-mix(in oklch, var(--mesa) 70%, transparent); }
 @media (prefers-reduced-motion: reduce) { .guia-abrir, .guia-mano, .guia-estela { animation: none !important; } }
+
+/* Stock: «últimas unidades…|» y «sin stock…|», sutiles y a máquina (Store.jsx, EtiquetaStock). Nunca un número. */
+.stock-txt { display: inline-block; font-family: var(--f-display); font-weight: 700; font-size: 15px; letter-spacing: -0.01em; line-height: 1.2; color: rgba(42, 35, 32, 0.72); white-space: nowrap; }
+.stock-txt .cursor-barra { margin-left: 0.06em; }
+.stock-txt.sin { color: #8f2f22; }
+.stock-txt.en-ficha { display: block; margin: -4px 0 10px; }
+.stock-txt.en-card { font-size: 13px; margin-top: -4px; }
+.stock-txt.en-carrito { display: block; font-size: 13px; margin: 2px 0 0; }
+.card.sin-stock .card-foto img { opacity: 0.42; filter: grayscale(0.55); }
+.card.sin-stock .card-nombre, .card.sin-stock .card-fila { opacity: 0.55; }
+.item.sin-stock img { opacity: 0.45; filter: grayscale(0.55); }
+.item .no-hay-mas { color: #8f2f22; font-size: 13px; margin-top: 4px; }
+.aviso-stock { margin: 12px 0 4px; padding: 12px 14px; border-radius: 14px; background: rgba(161, 42, 31, 0.08); color: #7a2418; font-size: 14.5px; line-height: 1.45; }
+.ficha-cuerpo .btn-oscuro:disabled { cursor: not-allowed; }

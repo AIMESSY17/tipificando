@@ -4,6 +4,7 @@ import { preload } from "react-dom";
 import Store from "./Store";
 import { fotoChica } from "@/lib/fotos";
 import { getCatalog, modoPrueba, pagosActivos } from "@/lib/server";
+import { nivelStock, umbralDe } from "@/lib/stock";
 
 export const piezaDe = (products, slug) => (slug ? products.findIndex((p) => p.slug === String(slug)) : -1);
 
@@ -24,8 +25,10 @@ export async function Tienda({ slug, demo }) {
   const products = conDemo(catalogo.products, demo);
   // el factor, el margen y la tabla de respaldo de envíos son privados: no viajan al navegador
   const { envio_cfg, envio_respaldo, ...settings } = todos; // eslint-disable-line no-unused-vars
-  // lo mismo con el peso y las medidas de las cajas
-  const publicos = products.map(({ weight_g, height_cm, width_cm, length_cm, ship_estimado, ...p }) => p); // eslint-disable-line no-unused-vars
+  // lo mismo con el peso y las medidas de las cajas. Y el stock: el comprador NUNCA ve cuántas
+  // unidades hay, solo si son las últimas o si no queda ninguna (stock_estado).
+  const umbral = umbralDe(todos);
+  const publicos = products.map(({ weight_g, height_cm, width_cm, length_cm, ship_estimado, stock, stock_aviso, ...p }) => ({ ...p, stock_estado: nivelStock(stock, umbral) })); // eslint-disable-line no-unused-vars
   const inicial = Math.max(0, piezaDe(publicos, slug));
   // la foto de la pieza del frente empieza a bajar con el HTML (celu: 800 px; compu: 1600 px)
   const p0 = publicos[inicial];

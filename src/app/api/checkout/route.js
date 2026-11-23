@@ -1,14 +1,25 @@
 import { NextResponse } from "next/server";
-import { adminDb, cotizar, huellaIp, modoPrueba, pagosActivos, sitio } from "@/lib/server";
+import { adminDb, cotizar, huellaIp, liberarReservas, modoPrueba, pagosActivos, refrescarCatalogo, sitio, getCatalog } from "@/lib/server";
 import { MINUTOS_RESERVA, copiaEnvio, itemsParaMP } from "@/lib/precios";
 import { MODALIDADES } from "@/lib/envio";
 import { validarEntrega } from "@/lib/zipnova";
+import { mensajeSinStock } from "@/lib/stock";
 
 // Crea el pedido y la preferencia de Mercado Pago (Checkout Pro).
 // Precios, cupón y envío SIEMPRE salen del servidor, nunca del navegador.
 const MAX_INTENTOS = 10;
 const VENTANA_MIN = 10;
-const err = (error, status) => NextResponse.json({ error }, { status });
+const err = (error, status, extra) => NextResponse.json({ error, ...extra }, { status });
+
+// El error 'sin_stock' de la base trae en el detalle [{ id, name, agotada }] (nunca cuántas quedan)
+function faltantesDe(error) {
+  try {
+    const f = JSON.parse(error.details || "[]");
+    return Array.isArray(f) ? f.map((x) => ({ id: x.id, name: String(x.name || "Una pieza"), agotada: Boolean(x.agotada) })) : [];
+  } catch {
+    return [];
+  }
+}
 
 export async function POST(req) {
   if (!pagosActivos()) return err("Mercado Pago todavía no está activado. Usá «Copiar pedido» o «Enviar por DM».", 503);
@@ -43,8 +54,11 @@ export async function POST(req) {
   // Envío por Andreani: hace falta el destino completo y el mail para avisarte cuando salga
   const entrega = body.destino ? validarEntrega(body.destino) : null;
 
+  // Antes de reservar, las reservas vencidas vuelven al stock (también corre sola en la base y con el cron)
+  await liberarReservas(db);
+
   const c = await cotizar(entrega?.destino ? { ...body, destino: entrega.destino } : body);
-  if (c.error) return err(c.error, c.status || 400);
+  if (c.error) return err(c.error, c.status || 400, c.sinStock ? { sinStock: c.sinStock } : undefined);
   if (c.code && c.cuponError) return err(c.cuponError + " Sacalo para seguir.", 400);
 
   let envioCopia = copiaEnvio(c.envio);
@@ -103,10 +117,20 @@ export async function POST(req) {
   }
   if (error) {
     if (/cupon_no_disponible/.test(error.message)) return err("Ese cupón ya no está disponible. Sacalo para seguir.", 409);
+    // Otro compró antes la última unidad (la base bloquea la fila y verifica): nada se cobra
+    if (/sin_stock/.test(error.message)) {
+      const faltan = faltantesDe(error);
+      refrescarCatalogo();
+      return err(mensajeSinStock(faltan) || "Una de las piezas se quedó sin stock. Revisá el carrito.", 409, { sinStock: faltan });
+    }
     console.error("crear_pedido:", error.message);
     return err("No pudimos guardar el pedido. Probá de nuevo.", 500);
   }
   const orderId = pedido.id;
+  // Si alguna pieza tiene control de stock, la reserva ya la descontó: la tienda se actualiza al instante
+  const { products } = await getCatalog();
+  const conStock = c.items.some((it) => products.find((p) => String(p.id) === String(it.id))?.stock != null);
+  if (conStock) refrescarCatalogo();
 
   const volver = `${site}/gracias?pedido=${orderId}`;
   const pref = {
@@ -137,8 +161,9 @@ export async function POST(req) {
     if (!r.ok || !j.init_point) throw new Error(`MP ${r.status} ${j.message || ""}`);
   } catch (e) {
     console.error("Mercado Pago (preferencia):", e.message, j);
-    // el pedido queda cancelado así no reserva el cupón
+    // el pedido queda cancelado así no reserva el cupón (y la base devuelve el stock reservado)
     await db.from("orders").update({ status: "cancelado", internal_notes: "No se pudo abrir Mercado Pago" }).eq("id", orderId);
+    if (conStock) refrescarCatalogo();
     return err("Mercado Pago no respondió. Probá de nuevo en un ratito.", 502);
   }
   await db.from("orders").update({ mp_preference_id: j.id }).eq("id", orderId);

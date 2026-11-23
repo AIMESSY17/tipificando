@@ -8,7 +8,7 @@ import { publicoModalidades } from "@/lib/zipnova";
 export async function POST(req) {
   const body = await req.json().catch(() => ({}));
   const r = await cotizar(body);
-  if (r.error) return NextResponse.json({ error: r.error }, { status: r.status || 400 });
+  if (r.error) return NextResponse.json({ error: r.error, ...(r.sinStock ? { sinStock: r.sinStock } : {}) }, { status: r.status || 400 });
   return NextResponse.json({
     subtotal: r.subtotal,
     discount: r.discount,

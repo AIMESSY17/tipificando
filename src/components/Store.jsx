@@ -1,5 +1,6 @@
 "use client";
 import { useEffect, useMemo, useRef, useState } from "react";
+import { useRouter } from "next/navigation";
 import { EscenaAuto } from "./Escena";
 import { Loader } from "./Effects";
 import { Logo } from "./Logo";
@@ -12,6 +13,7 @@ import { fotoChica } from "@/lib/fotos";
 import { pedirGiroscopio } from "@/lib/inclinacion";
 import { toque, MOVER, TIEMPO } from "@/lib/toque";
 import { Recorrido, modN } from "@/lib/recorrido";
+import { TXT_ULTIMAS, TXT_SIN, TXT_NO_HAY_MAS, mensajeSinStock } from "@/lib/stock";
 
 const CART_KEY = "tipificado-carrito";
 const PISTA_KEY = "tipificado-deslizo";
@@ -20,6 +22,33 @@ const MESA_DEF = "#e6ded2";
 const palabraDe = (p) => (p.word || p.name.split(/[\s/]+/).sort((a, b) => b.length - a.length)[0] || "").toUpperCase();
 const fechaLarga = (iso) => new Date(iso + "T12:00").toLocaleDateString("es-AR", { day: "numeric", month: "long" });
 const dos = (n) => String(n).padStart(2, "0");
+
+// Stock: la tienda nunca sabe cuántas unidades hay. Antes de sumar una pieza con control de stock
+// le pregunta al servidor si alcanza (sí/no). Si no responde, deja seguir: al pagar decide la base.
+async function hayStock(id, qty) {
+  try {
+    const r = await fetch("/api/stock", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ id, qty }),
+      signal: AbortSignal.timeout(4000),
+    });
+    const j = await r.json();
+    return j.ok !== false;
+  } catch {
+    return true;
+  }
+}
+const enCarrito = (cart, id) => cart.reduce((s, it) => s + (it.id === id ? it.qty : 0), 0);
+// «últimas unidades…|» / «sin stock…|» en la tipografía de la marca, con su cursor
+function EtiquetaStock({ estado, className = "" }) {
+  if (estado !== "ultimas" && estado !== "sin") return null;
+  return (
+    <span className={"stock-txt " + (estado === "sin" ? "sin " : "") + className}>
+      {estado === "sin" ? TXT_SIN : TXT_ULTIMAS}<span className="cursor-barra" aria-hidden />
+    </span>
+  );
+}
 
 function useReducedMotion() {
   const [r, setR] = useState(false);
@@ -98,6 +127,9 @@ export default function Store({ products, settings, envios = [], inicial = 0, mo
   const [cerrando, setCerrando] = useState(false);
   const [panel, setPanel] = useState(null); // "carrito" | "pagar" | "todo"
   const [cart, setCart] = useState([]);
+  // piezas del carrito que al pagar ya no alcanzaban: { ids: [id], msg } (el resto del carrito queda)
+  const [faltaStock, setFaltaStock] = useState(null);
+  const router = useRouter();
   const [toast, setToast] = useState(null);
   const [sin3d, setSin3d] = useState(false);
   const [enVuelo, setEnVuelo] = useState(0); // piezas volando a la taza (el número sube cuando caen)
@@ -356,6 +388,25 @@ export default function Store({ products, settings, envios = [], inicial = 0, mo
     flash.t = setTimeout(() => setToast(null), 2200);
   };
 
+  // Ficha → carrito: si la pieza tiene control de stock, primero pregunta si alcanza (sin números)
+  const agregar = async (prod, color, qty, imgEl) => {
+    if (prod.stock_estado === "sin") return false;
+    if (prod.stock_estado && !(await hayStock(prod.id, enCarrito(cart, prod.id) + qty))) {
+      flash(TXT_NO_HAY_MAS);
+      return false;
+    }
+    add(prod, color, qty, imgEl);
+    return true;
+  };
+
+  // Al pagar, otro compró antes: se marcan esas piezas en el carrito (sin perder lo demás) y la
+  // tienda se actualiza para mostrar «sin stock» donde corresponda.
+  const sinStockAlPagar = (faltan, msg) => {
+    setFaltaStock({ ids: faltan.map((f) => String(f.id)), agotadas: faltan.filter((f) => f.agotada).map((f) => String(f.id)), msg: msg || mensajeSinStock(faltan) });
+    setPanel("carrito");
+    router.refresh();
+  };
+
   const add = (prod, color, qty, imgEl) => {
     setCart((c) => {
       const key = prod.id + "|" + color;
@@ -474,13 +525,13 @@ export default function Store({ products, settings, envios = [], inicial = 0, mo
       {muestraGuia && <GuiaAbrir reducido={reduced} />}
 
       {sheet !== null && (
-        <Ficha prod={products[sheet]} settings={settings} flash={flash} vacaciones={vacaciones} con3d={!sin3d} cerrando={cerrando} tiro={tiro} sinEntrada={sinEntrada} onClose={cerrarFicha} onAdd={add} />
+        <Ficha prod={products[sheet]} settings={settings} flash={flash} vacaciones={vacaciones} con3d={!sin3d} cerrando={cerrando} tiro={tiro} sinEntrada={sinEntrada} onClose={cerrarFicha} onAdd={agregar} />
       )}
       {panel === "carrito" && (
-        <Carrito cart={cart} setCart={setCart} vacaciones={vacaciones} onClose={() => setPanel(null)} onPay={() => setPanel("pagar")} />
+        <Carrito cart={cart} setCart={setCart} products={products} faltaStock={faltaStock} setFaltaStock={setFaltaStock} vacaciones={vacaciones} onClose={() => setPanel(null)} onPay={() => setPanel("pagar")} />
       )}
       {panel === "pagar" && (
-        <Pagar cart={cart} settings={settings} envios={envios} vacaciones={vacaciones} pagos={pagos} onBack={() => setPanel("carrito")} onClose={() => setPanel(null)} flash={flash} />
+        <Pagar cart={cart} settings={settings} envios={envios} vacaciones={vacaciones} pagos={pagos} onBack={() => setPanel("carrito")} onClose={() => setPanel(null)} flash={flash} onSinStock={sinStockAlPagar} />
       )}
 
       {toast && <div className="toast" role="status">{toast}</div>}
@@ -525,6 +576,13 @@ function Ficha({ prod, settings, flash, vacaciones, con3d, cerrando, tiro, sinEn
   const fotoColor = sel?.image_url ? color : prod.colors?.[0]?.name;
   const precio = precioDe(prod);
   const agotada = prod.colors?.length > 0 && !libre;
+  const sinUnidades = prod.stock_estado === "sin";
+  const [sumando, setSumando] = useState(false);
+  const sumar = async () => {
+    setSumando(true);
+    const ok = await onAdd(prod, color, qty, img.current);
+    if (!ok) setSumando(false);
+  };
   const conFoto = !con3d || !!sel?.image_url;
   return (
     <div
@@ -550,6 +608,7 @@ function Ficha({ prod, settings, flash, vacaciones, con3d, cerrando, tiro, sinEn
             )}
           </div>
           <h3>{prod.name}<span className="cursor-barra" aria-hidden /></h3>
+          <EtiquetaStock estado={prod.stock_estado} className="en-ficha" />
           <p className="desc">{prod.description}</p>
           <p className="ficha-precio">
             {enOferta(prod) && <s className="precio-antes">{money(prod.price)}</s>}
@@ -582,10 +641,10 @@ function Ficha({ prod, settings, flash, vacaciones, con3d, cerrando, tiro, sinEn
             <div className="cantidad">
               <button onClick={() => setQty((q) => Math.max(1, q - 1))} aria-label="Menos">−</button>
               <span>{qty}</span>
-              <button onClick={() => setQty((q) => Math.min(20, q + 1))} aria-label="Más">+</button>
+              <button onClick={() => setQty((q) => Math.min(20, q + 1))} aria-label="Más" disabled={sinUnidades}>+</button>
             </div>
-            <button className="btn-oscuro" disabled={!!vacaciones || agotada} onClick={() => onAdd(prod, color, qty, img.current)}>
-              {agotada ? "Agotada por ahora" : vacaciones ? "Volvemos pronto" : `Agregar al carrito · ${money(precio * qty)}`}
+            <button className="btn-oscuro" disabled={!!vacaciones || agotada || sinUnidades || sumando} onClick={sumar}>
+              {sinUnidades ? "Sin stock" : agotada ? "Agotada por ahora" : vacaciones ? "Volvemos pronto" : sumando ? "Un segundo…" : `Agregar al carrito · ${money(precio * qty)}`}
             </button>
           </div>
         </div>
@@ -595,29 +654,58 @@ function Ficha({ prod, settings, flash, vacaciones, con3d, cerrando, tiro, sinEn
 }
 
 // ---------- Carrito ----------
-function Carrito({ cart, setCart, vacaciones, onClose, onPay }) {
+function Carrito({ cart, setCart, products, faltaStock, setFaltaStock, vacaciones, onClose, onPay }) {
   const total = cart.reduce((s, it) => s + it.price * it.qty, 0);
-  const upd = (key, d) => setCart((c) => c.map((x) => (x.key === key ? { ...x, qty: Math.max(1, x.qty + d) } : x)));
-  const del = (key) => setCart((c) => c.filter((x) => x.key !== key));
+  const [noHayMas, setNoHayMas] = useState(null); // key del ítem que no puede sumar más
+  const prodDe = (id) => products.find((p) => p.id === id);
+  // una pieza marcada deja de estarlo cuando se saca o se baja su cantidad
+  const desmarcar = (id) => setFaltaStock((f) => {
+    if (!f) return f;
+    const ids = f.ids.filter((x) => x !== String(id));
+    return ids.length ? { ...f, ids } : null;
+  });
+  const upd = async (it, d) => {
+    setNoHayMas(null);
+    if (d > 0) {
+      const p = prodDe(it.id);
+      if (p?.stock_estado === "sin" || (p?.stock_estado && !(await hayStock(it.id, enCarrito(cart, it.id) + d)))) {
+        setNoHayMas(it.key);
+        return;
+      }
+    } else desmarcar(it.id);
+    setCart((c) => c.map((x) => (x.key === it.key ? { ...x, qty: Math.max(1, x.qty + d) } : x)));
+  };
+  const del = (it) => {
+    setNoHayMas(null);
+    if (!cart.some((x) => x.id === it.id && x.key !== it.key)) desmarcar(it.id);
+    setCart((c) => c.filter((x) => x.key !== it.key));
+  };
+  // marcada: al pagar no alcanzó, o la tienda ya sabe que no queda ninguna
+  const estadoDe = (it) => (prodDe(it.id)?.stock_estado === "sin" || faltaStock?.agotadas?.includes(String(it.id)) ? "sin" : faltaStock?.ids.includes(String(it.id)) ? "falta" : null);
+  const trabado = cart.some((it) => estadoDe(it));
   return (
     <div className="capa" onClick={onClose}>
       <aside className="hoja lateral" onClick={(e) => e.stopPropagation()} role="dialog" aria-label="Tu carrito">
         <div className="hoja-head"><h3>Tu carrito</h3><button className="cerrar" onClick={onClose} aria-label="Cerrar">×</button></div>
         <div className="lista">
           {cart.length === 0 && <p className="vacio-txt">Todavía no elegiste ninguna pieza.</p>}
+          {faltaStock && cart.length > 0 && <p className="aviso-stock" role="alert">{faltaStock.msg}</p>}
           {cart.map((it) => (
-            <div className="item" key={it.key}>
+            <div className={"item" + (estadoDe(it) ? " sin-stock" : "")} key={it.key}>
               <img src={it.image} alt="" draggable={false} />
               <div>
                 <b>{it.name}</b>
                 <small>{it.color}</small>
+                {estadoDe(it) === "sin" && <EtiquetaStock estado="sin" className="en-carrito" />}
+                {estadoDe(it) === "falta" && <small className="no-hay-mas">no hay tantas unidades: bajá la cantidad</small>}
                 <div className="cantidad chica">
-                  <button onClick={() => upd(it.key, -1)}>−</button><span>{it.qty}</span><button onClick={() => upd(it.key, 1)}>+</button>
+                  <button onClick={() => upd(it, -1)} aria-label="Menos">−</button><span>{it.qty}</span><button onClick={() => upd(it, 1)} aria-label="Más">+</button>
                 </div>
+                {noHayMas === it.key && <small className="no-hay-mas" role="status">no hay más unidades disponibles de esta pieza</small>}
               </div>
               <div className="item-der">
                 <b>{money(it.price * it.qty)}</b>
-                <button className="link" onClick={() => del(it.key)}>Quitar</button>
+                <button className="link" onClick={() => del(it)}>Quitar</button>
               </div>
             </div>
           ))}
@@ -625,7 +713,8 @@ function Carrito({ cart, setCart, vacaciones, onClose, onPay }) {
         <div className="hoja-pie">
           <div className="total"><span>Subtotal</span><b>{money(total)}</b></div>
           {vacaciones && <p className="nota">Estamos de vacaciones: las compras vuelven a abrir{vacaciones.vuelta ? ` el ${fechaLarga(vacaciones.vuelta)}` : " pronto"}.</p>}
-          <button className="btn-azul" disabled={!cart.length || !!vacaciones} onClick={onPay}>Continuar al pago</button>
+          {trabado && <p className="nota">Sacá o ajustá las piezas marcadas para seguir.</p>}
+          <button className="btn-azul" disabled={!cart.length || !!vacaciones || trabado} onClick={onPay}>Continuar al pago</button>
         </div>
       </aside>
     </div>
@@ -634,7 +723,7 @@ function Carrito({ cart, setCart, vacaciones, onClose, onPay }) {
 
 // ---------- Pagar ----------
 // Envío y cupón se eligen acá; el servidor (api/cotizar) calcula todo y api/checkout lo vuelve a calcular al pagar.
-function Pagar({ cart, settings, envios, vacaciones, pagos, onBack, onClose, flash }) {
+function Pagar({ cart, settings, envios, vacaciones, pagos, onBack, onClose, flash, onSinStock }) {
   const [name, setName] = useState("");
   const [contact, setContact] = useState("");
   const [email, setEmail] = useState("");
@@ -676,7 +765,11 @@ function Pagar({ cart, settings, envios, vacaciones, pagos, onBack, onClose, fla
       .then(({ ok, j }) => {
         if (!vivo) return;
         setCotizando(false);
-        if (!ok) { setErr(j.error || ""); return; }
+        if (!ok) {
+          if (j.sinStock?.length) return onSinStock(j.sinStock, j.error);
+          setErr(j.error || "");
+          return;
+        }
         setErr("");
         // si la modalidad elegida no existe para ese destino pero la otra sí, se pasa a la otra
         const a = j.andreani;
@@ -753,6 +846,10 @@ function Pagar({ cart, settings, envios, vacaciones, pagos, onBack, onClose, fla
         body: JSON.stringify({ name, contact, email: email.trim(), note, coupon: cuponAplicado, shippingId: envioId, items, destino: esAndreani ? { ...dest, cp: normalizarCp(dest.cp) } : undefined }),
       });
       const j = await r.json();
+      if (r.status === 409 && j.sinStock?.length) {
+        setBusy(false);
+        return onSinStock(j.sinStock, j.error);
+      }
       if (!r.ok || !j.url) throw new Error(j.error || "Error");
       window.location.href = j.url;
     } catch (e) {
@@ -1080,9 +1177,9 @@ function HojaMaquina({ products, actual, abierta, visible, reducido, onAbrir, on
                 {list.map(({ p, i }, k) => (
                   <button
                     key={p.id}
-                    className={"card" + (i === actual ? " actual" : "")}
+                    className={"card" + (i === actual ? " actual" : "") + (p.stock_estado === "sin" ? " sin-stock" : "")}
                     style={{ "--pared": vivo(p.bg), "--mesa": vivo(p.table_color || MESA_DEF, 1.06), "--k": k }}
-                    aria-label={`${p.name}, ${money(precioDe(p))}`}
+                    aria-label={`${p.name}, ${money(precioDe(p))}${p.stock_estado === "sin" ? ", sin stock" : p.stock_estado === "ultimas" ? ", últimas unidades" : ""}`}
                     {...toque(() => onPick(i))}
                   >
                     <span className="card-foto">
@@ -1104,6 +1201,7 @@ function HojaMaquina({ products, actual, abierta, visible, reducido, onAbrir, on
                           {(p.colors || []).slice(0, 5).map((c) => <span key={c.name} className={c.agotado ? "agotado" : ""} style={{ "--c": c.hex }} />)}
                         </span>
                       </span>
+                      <EtiquetaStock estado={p.stock_estado} className="en-card" />
                     </span>
                   </button>
                 ))}

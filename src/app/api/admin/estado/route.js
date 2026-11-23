@@ -20,7 +20,9 @@ async function supabase() {
     db.from("orders").select("coupon_counted, paid_at", { head: true, count: "exact" }),
   ]);
   if (w.error || i.error || f.error) return item(false, "Base de datos (Supabase)", "Conecta, pero falta actualizar la base: corré supabase/schema.sql en el SQL Editor.");
-  return item(true, "Base de datos (Supabase)", "Conectada y al día.");
+  const s = await db.from("stock_movimientos").select("id", { head: true, count: "exact" });
+  if (s.error) return item(false, "Base de datos (Supabase)", "Conecta, pero falta el control de stock: corré supabase/stock.sql en el SQL Editor.");
+  return item(true, "Base de datos (Supabase)", "Conectada y al día (con control de stock).");
 }
 
 async function mercadoPago() {

@@ -5,8 +5,9 @@ import { quitarFondo, tieneTransparencia, encuadrar } from "@/lib/recorte";
 import { analizar, PARES } from "@/lib/arte";
 import { enOferta, precioDe, piezaAgotada } from "@/lib/precios";
 import { tieneMedidas } from "@/lib/envio";
+import { nivelStock, umbralDe, INSIGNIA_STOCK, TXT_ULTIMAS, TXT_SIN } from "@/lib/stock";
 import { EscenaAuto } from "@/components/Escena";
-import { useAdm, useDatos, q, money, Buscador, Filtros, Titulo, Esqueleto, Vacio, ErrorCarga, Interruptor, Segmento, Hoja, mensajeError } from "./ui";
+import { useAdm, useDatos, q, money, numPedido, fecha, Buscador, Filtros, Titulo, Esqueleto, Vacio, ErrorCarga, Interruptor, Segmento, Hoja, mensajeError } from "./ui";
 
 // Paleta curada (la misma que usa la dirección de arte automática)
 const PALETA = PARES.map((x) => x.pared);
@@ -31,27 +32,43 @@ const IconoLink = () => (
 );
 
 // ===================== LISTA =====================
+// Insignia de stock de la lista: el número de unidades + verde / naranja / rojo / gris
+function InsigniaStock({ p, umbral }) {
+  const nivel = nivelStock(p.stock, umbral);
+  const [cls, txt] = INSIGNIA_STOCK[nivel];
+  return (
+    <span className={"adm-stock-ins " + cls}>
+      {p.stock != null && <b>{p.stock}</b>}
+      <em>{txt}</em>
+    </span>
+  );
+}
+
 export default function Piezas() {
-  const { db, refrescarTienda, toast } = useAdm();
+  const { db, refrescarTienda, toast, filtroPiezas } = useAdm();
   const datos = useDatos(async () => {
     const [list, ajustes] = await Promise.all([
       q(db.from("products").select("*").order("sort")),
       q(db.from("settings").select("*")),
     ]);
     const s = Object.fromEntries((ajustes || []).map((r) => [r.key, r.value]));
-    return { list: list || [], pedGen: s.pedestal || "travertino", produccion: s.produccion || "" };
+    return { list: list || [], pedGen: s.pedestal || "travertino", produccion: s.produccion || "", umbral: umbralDe(s) };
   }, [db]);
   const [list, setList] = useState(null);
   useEffect(() => { if (datos.data) setList(datos.data.list); }, [datos.data]);
   const [edit, setEdit] = useState(null);
   const [busca, setBusca] = useState("");
-  const [filtro, setFiltro] = useState("todas");
+  const [filtro, setFiltro] = useState(filtroPiezas || "todas");
+  useEffect(() => { if (filtroPiezas) setFiltro(filtroPiezas); }, [filtroPiezas]);
+  const umbral = datos.data?.umbral ?? 10;
   const [cat, setCat] = useState("");
 
   const cats = useMemo(() => [...new Set((list || []).map((p) => p.category.split("/")[0].trim()).filter(Boolean))].sort(), [list]);
   const cuenta = (f) => (list || []).filter(f).length;
   const FILTROS = {
     todas: () => true,
+    ultimas: (p) => nivelStock(p.stock, umbral) === "ultimas",
+    sinstock: (p) => nivelStock(p.stock, umbral) === "sin",
     visibles: (p) => p.active,
     ocultas: (p) => !p.active,
     agotadas: (p) => piezaAgotada(p),
@@ -126,7 +143,7 @@ export default function Piezas() {
     }
   };
 
-  const nueva = () => setEdit({ name: "", slug: "", category: "", price: 0, sale_price: null, badge: "", production_time: "", description: "", image_url: "", bg: PALETA[3], table_color: MESAS[0], word: "", pedestal: "", colors: [], glow: false, active: true, sort: list.length, weight_g: null, height_cm: null, width_cm: null, length_cm: null, ship_estimado: false });
+  const nueva = () => setEdit({ name: "", slug: "", category: "", price: 0, sale_price: null, badge: "", production_time: "", description: "", image_url: "", bg: PALETA[3], table_color: MESAS[0], word: "", pedestal: "", colors: [], glow: false, active: true, sort: list.length, weight_g: null, height_cm: null, width_cm: null, length_cm: null, ship_estimado: false, stock: null });
 
   return (
     <>
@@ -141,7 +158,8 @@ export default function Piezas() {
         <>
           <Buscador valor={busca} onChange={setBusca} placeholder="Buscar por nombre o categoría" />
           <Filtros valor={filtro} onChange={setFiltro} opciones={[
-            ["todas", "Todas", list.length], ["visibles", "Visibles", cuenta(FILTROS.visibles)], ["ocultas", "Ocultas", cuenta(FILTROS.ocultas)],
+            ["todas", "Todas", list.length], ["ultimas", "Últimas unidades", cuenta(FILTROS.ultimas)], ["sinstock", "Sin stock", cuenta(FILTROS.sinstock)],
+            ["visibles", "Visibles", cuenta(FILTROS.visibles)], ["ocultas", "Ocultas", cuenta(FILTROS.ocultas)],
             ["agotadas", "Agotadas", cuenta(FILTROS.agotadas)], ["oferta", "En oferta", cuenta(FILTROS.oferta)],
           ]} />
           {cats.length > 1 && (
@@ -176,6 +194,7 @@ export default function Piezas() {
                         {enOferta(p) ? <><s>{money(p.price)}</s> {money(precioDe(p))}</> : money(p.price)} · {(p.colors || []).length} colores
                       </small>
                       <span className="adm-insignias">
+                        <InsigniaStock p={p} umbral={umbral} />
                         {p.badge && <em className="ins-etiqueta">{ETIQUETAS[p.badge]}</em>}
                         {enOferta(p) && <em className="ins-oferta">Oferta</em>}
                         {piezaAgotada(p) ? <em className="ins-agotada">Agotada</em> : (p.colors || []).some((c) => c.agotado) && <em className="ins-agotada suave">Algún color agotado</em>}
@@ -205,7 +224,7 @@ export default function Piezas() {
         </>
       )}
       {edit && (
-        <Editor prod={edit} usados={list.filter((x) => x.id !== edit.id).map((x) => x.bg)} pedestalGeneral={datos.data?.pedGen} produccionGeneral={datos.data?.produccion}
+        <Editor prod={edit} umbral={umbral} usados={list.filter((x) => x.id !== edit.id).map((x) => x.bg)} pedestalGeneral={datos.data?.pedGen} produccionGeneral={datos.data?.produccion}
           ultimoSort={list.length} onClose={() => setEdit(null)} onSaved={() => { setEdit(null); datos.recargar(); }} />
       )}
     </>
@@ -278,7 +297,7 @@ function Escenita({ p, foto, pedestalGeneral }) {
 }
 
 // ===================== EDITOR =====================
-export function Editor({ prod, usados = [], pedestalGeneral = "travertino", produccionGeneral = "", ultimoSort = 0, onClose, onSaved }) {
+export function Editor({ prod, umbral = 10, usados = [], pedestalGeneral = "travertino", produccionGeneral = "", ultimoSort = 0, onClose, onSaved }) {
   const { db, session, refrescarTienda, toast, confirmar } = useAdm();
   const [p, setP] = useState({ ...prod, sale_price: prod.sale_price ?? null, badge: prod.badge || "", production_time: prod.production_time || "", weight_g: prod.weight_g ?? null, height_cm: prod.height_cm ?? null, width_cm: prod.width_cm ?? null, length_cm: prod.length_cm ?? null, colors: (prod.colors || []).map((c) => ({ ...c })) });
   const [busy, setBusy] = useState("");
@@ -286,10 +305,17 @@ export function Editor({ prod, usados = [], pedestalGeneral = "travertino", prod
   const [canRemove, setCanRemove] = useState(false);
   const [arte, setArte] = useState(null); // lo que propuso la dirección de arte automática
   const [vista, setVista] = useState(-1); // -1 = foto principal; i = foto del color i
+  // Stock: se guarda aparte (fijar_stock en la base), nunca junto con la pieza, así una venta que entra
+  // mientras se edita no se pisa. stockAntes = lo que había al abrir (o al recargar).
+  const [stockAntes, setStockAntes] = useState(prod.stock ?? null);
+  const [ctl, setCtl] = useState(prod.stock != null);
+  const [unidades, setUnidades] = useState(prod.stock != null ? String(prod.stock) : "");
+  const stockNuevo = ctl ? Math.max(0, Math.min(100000, parseInt(unidades, 10) || 0)) : null;
+  const sumarUnidades = (d) => setUnidades((u) => String(Math.max(0, (parseInt(u, 10) || 0) + d)));
   const set = (k, v) => setP((x) => ({ ...x, [k]: v }));
   const setColor = (i, patch) => setP((x) => ({ ...x, colors: x.colors.map((c, k) => (k === i ? { ...c, ...patch } : c)) }));
   const cambios = useRef(false);
-  useEffect(() => { cambios.current = JSON.stringify(p) !== JSON.stringify({ ...prod, sale_price: prod.sale_price ?? null, badge: prod.badge || "", production_time: prod.production_time || "", weight_g: prod.weight_g ?? null, height_cm: prod.height_cm ?? null, width_cm: prod.width_cm ?? null, length_cm: prod.length_cm ?? null, colors: prod.colors || [] }); }, [p, prod]);
+  useEffect(() => { cambios.current = stockNuevo !== stockAntes || JSON.stringify(p) !== JSON.stringify({ ...prod, sale_price: prod.sale_price ?? null, badge: prod.badge || "", production_time: prod.production_time || "", weight_g: prod.weight_g ?? null, height_cm: prod.height_cm ?? null, width_cm: prod.width_cm ?? null, length_cm: prod.length_cm ?? null, colors: prod.colors || [] }); }, [p, prod, stockNuevo, stockAntes]);
 
   useEffect(() => {
     fetch("/api/quitar-fondo").then((r) => r.json()).then((j) => setCanRemove(Boolean(j.enabled))).catch(() => {});
@@ -378,18 +404,44 @@ export function Editor({ prod, usados = [], pedestalGeneral = "travertino", prod
     ship_estimado: ["weight_g", "height_cm", "width_cm", "length_cm"].some((k) => Number(p[k] ?? 0) !== Number(prod[k] ?? 0)) ? false : !!prod.ship_estimado,
   });
 
+  // Guarda el stock con la base (bloquea la fila y anota «Carga manual» en el historial)
+  const guardarStock = async (id) => {
+    if (stockNuevo === stockAntes) return true;
+    if (ctl && unidades.trim() === "") { setErr("Poné cuántas unidades hay (puede ser 0)."); return false; }
+    const { error } = await db.rpc("fijar_stock", { p_product: id, p_stock: stockNuevo, p_antes: stockAntes });
+    if (!error) { setStockAntes(stockNuevo); return true; }
+    if (/stock_cambio/.test(error.message)) {
+      const { data } = await db.from("products").select("stock").eq("id", id).maybeSingle();
+      const ahora = data?.stock ?? null;
+      setStockAntes(ahora);
+      setCtl(ahora != null);
+      setUnidades(ahora != null ? String(ahora) : "");
+      setErr(`Mientras editabas entró una compra o se liberó una reserva: ahora ${ahora == null ? "no tiene control de stock" : `hay ${ahora}`}. Revisá el número y tocá Guardar de nuevo.`);
+    } else if (/PGRST202|could not find the function/i.test(`${error.code} ${error.message}`)) {
+      setErr("Para usar el stock falta actualizar la base: corré supabase/stock.sql en Supabase (SQL Editor). El resto se guardó.");
+    } else setErr("No se pudo guardar el stock: " + mensajeError(error));
+    return false;
+  };
+
   const guardar = async () => {
     setErr("");
     if (!p.name.trim()) return setErr("Ponele nombre a la pieza.");
     if (!p.image_url) return setErr("Falta la foto.");
     if (!(Number(p.price) > 0)) return setErr("Poné el precio.");
     if (p.sale_price && Number(p.sale_price) >= Number(p.price)) return setErr("El precio de oferta tiene que ser menor al precio normal.");
+    if (ctl && unidades.trim() === "") return setErr("Poné cuántas unidades hay (puede ser 0) o apagá «Controlar stock».");
     setBusy("Guardando…");
     const row = fila();
-    const { error } = p.id ? await db.from("products").update(row).eq("id", p.id) : await db.from("products").insert(row);
+    const { data: guardada, error } = p.id
+      ? await db.from("products").update(row).eq("id", p.id).select("id").single()
+      : await db.from("products").insert(row).select("id").single();
+    if (error) { setBusy(""); return setErr(/duplicate/.test(error.message) ? "Ya hay una pieza con ese nombre. Cambiale el nombre." : mensajeError(error)); }
+    const id = p.id || guardada.id;
+    if (!p.id) setP((x) => ({ ...x, id }));
+    const stockOk = await guardarStock(id);
     setBusy("");
-    if (error) return setErr(/duplicate/.test(error.message) ? "Ya hay una pieza con ese nombre. Cambiale el nombre." : mensajeError(error));
     await refrescarTienda();
+    if (!stockOk) return;
     toast("Guardado ✓ La tienda ya está actualizada");
     onSaved();
   };
@@ -484,6 +536,34 @@ export function Editor({ prod, usados = [], pedestalGeneral = "travertino", prod
         {!tieneMedidas(p) ? <p className="adm-aviso">⚠️ Sin peso y medidas completos no se puede cotizar el envío de esta pieza.</p> : <p className="adm-ayuda">Medidas de la caja con la que la mandás. Con esto se calcula el envío.</p>}
       </div>
 
+      <p className="adm-label">Stock</p>
+      <div className="adm-grupo">
+        <label className="adm-check">
+          <span>Controlar stock<small>{ctl ? "Se descuenta solo con cada venta." : "Apagado: se vende sin límite, como hasta ahora."}</small></span>
+          <Interruptor checked={ctl} onChange={(v) => { setCtl(v); if (v && unidades === "") setUnidades(stockAntes != null ? String(stockAntes) : ""); }} label="Controlar stock" />
+        </label>
+        {ctl && (
+          <div className="adm-stock-editor">
+            <label htmlFor="adm-unidades">Unidades disponibles</label>
+            <div className="adm-stock-fila">
+              <button type="button" onClick={() => sumarUnidades(-1)} aria-label="Una menos" disabled={!(parseInt(unidades, 10) > 0)}>−</button>
+              <input id="adm-unidades" type="text" inputMode="numeric" pattern="[0-9]*" enterKeyHint="done" autoComplete="off" placeholder="0"
+                value={unidades} onChange={(e) => setUnidades(e.target.value.replace(/\D/g, "").slice(0, 6))} onFocus={(e) => e.target.select()} />
+              <button type="button" onClick={() => sumarUnidades(1)} aria-label="Una más">+</button>
+            </div>
+            <p className="adm-stock-vista">
+              <span className={"adm-stock-ins " + INSIGNIA_STOCK[nivelStock(stockNuevo, umbral)][0]}><em>{INSIGNIA_STOCK[nivelStock(stockNuevo, umbral)][1]}</em></span>
+              {nivelStock(stockNuevo, umbral) === "sin" ? <>En la tienda: «{TXT_SIN}|» y no se puede comprar.</>
+                : nivelStock(stockNuevo, umbral) === "ultimas" ? <>En la tienda: «{TXT_ULTIMAS}|» (sin el número).</>
+                : <>En la tienda no se muestra nada (hay {umbral} o más).</>}
+            </p>
+            {stockNuevo !== stockAntes && stockAntes != null && <p className="adm-ayuda">Al guardar: {stockAntes} → {stockNuevo} ({stockNuevo - stockAntes > 0 ? "+" : ""}{stockNuevo - stockAntes}). Queda en el historial como «Carga manual».</p>}
+            <p className="adm-ayuda">Los pedidos que esperan el pago ya están descontados: si no se pagan a tiempo, vuelven solos.</p>
+          </div>
+        )}
+        {p.id && <HistorialStock id={p.id} version={stockAntes} />}
+      </div>
+
       <p className="adm-label">Etiqueta en la tienda</p>
       <Segmento valor={p.badge || ""} onChange={(v) => set("badge", v)} opciones={[["", "Ninguna"], ["nuevo", "Nuevo"], ["ultimas", "Últimas"]]} />
 
@@ -537,5 +617,36 @@ export function Editor({ prod, usados = [], pedestalGeneral = "travertino", prod
       {p.id && <button className="adm-btn" onClick={duplicar} disabled={!!busy}>Duplicar pieza</button>}
       {p.id && <button className="adm-btn rojo" onClick={eliminar}>Borrar pieza</button>}
     </Hoja>
+  );
+}
+
+// Últimos movimientos de stock de una pieza: «Venta pedido #0123 −1», «Carga manual +50»
+const MOTIVO = { venta: "Venta", reserva: "Reserva", "liberación": "Reserva liberada", "carga manual": "Carga manual", "devolución": "Devolución" };
+function HistorialStock({ id, version }) {
+  const { db } = useAdm();
+  const [todos, setTodos] = useState(false);
+  const datos = useDatos(async () => {
+    const { data, error } = await db.from("stock_movimientos").select("id, created_at, cantidad, motivo, stock_despues, by_email, orders(number)")
+      .eq("product_id", id).order("created_at", { ascending: false }).order("id", { ascending: false }).limit(todos ? 100 : 8);
+    if (error) return null; // sin stock.sql todavía: no se muestra
+    return data || [];
+  }, [db, id, version, todos]);
+  if (!datos.data?.length) return null;
+  return (
+    <div className="adm-stock-hist">
+      <p className="adm-stock-hist-tit">Historial</p>
+      <ul>
+        {datos.data.map((m) => (
+          <li key={m.id}>
+            <span>
+              {MOTIVO[m.motivo] || m.motivo}{m.orders?.number ? ` pedido ${numPedido(m.orders.number)}` : ""}
+              <small>{fecha(m.created_at, true)}{m.motivo === "reserva" ? " · esperando el pago" : ""}{m.by_email ? ` · ${m.by_email.split("@")[0]}` : ""}</small>
+            </span>
+            <b className={m.cantidad > 0 ? "mas" : m.cantidad < 0 ? "menos" : ""}>{m.cantidad > 0 ? "+" : m.cantidad < 0 ? "−" : "±"}{Math.abs(m.cantidad)}</b>
+          </li>
+        ))}
+      </ul>
+      {!todos && datos.data.length >= 8 && <button className="adm-link" onClick={() => setTodos(true)}>Ver más movimientos</button>}
+    </div>
   );
 }

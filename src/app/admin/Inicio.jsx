@@ -1,6 +1,7 @@
 "use client";
 import { useMemo, useState } from "react";
 import { VENTA } from "@/lib/precios";
+import { nivelStock, umbralDe } from "@/lib/stock";
 import { useAdm, useDatos, q, money, Titulo, Esqueleto, ErrorCarga, Vacio } from "./ui";
 import { FilaPedido } from "./Pedidos";
 
@@ -10,12 +11,13 @@ const dia = (d) => new Date(d.getFullYear(), d.getMonth(), d.getDate()).getTime(
 export default function Inicio() {
   const { db, version, abrirPedido, irA } = useAdm();
   const datos = useDatos(async () => {
-    const [orders, products, arr] = await Promise.all([
+    const [orders, products, arr, umbral] = await Promise.all([
       q(db.from("orders").select("*").order("created_at", { ascending: false }).limit(1000)),
       q(db.from("products").select("*")),
       db.from("arrepentimientos").select("id", { count: "exact", head: true }).eq("resuelto", false).then((r) => r.count || 0),
+      db.from("settings").select("value").eq("key", "stock_umbral").maybeSingle().then((r) => umbralDe({ stock_umbral: r.data?.value })),
     ]);
-    return { orders: orders || [], products: products || [], arr };
+    return { orders: orders || [], products: products || [], arr, umbral };
   }, [db, version]);
 
   const r = useMemo(() => {
@@ -47,6 +49,12 @@ export default function Inicio() {
       producir: orders.filter((o) => o.status === "pagado" || o.status === "en produccion").length,
       nuevos: orders.filter((o) => !o.seen).length,
       dias, top, ultimos: orders.slice(0, 5), hay: orders.length > 0,
+      // stock: solo piezas visibles con control
+      stock: (() => {
+        const con = products.filter((p) => p.active && p.stock != null);
+        const nivel = (p) => nivelStock(p.stock, datos.data.umbral);
+        return { con: con.length, ultimas: con.filter((p) => nivel(p) === "ultimas").length, sin: con.filter((p) => nivel(p) === "sin").length };
+      })(),
     };
   }, [datos.data]);
 
@@ -80,6 +88,7 @@ export default function Inicio() {
             <button className="adm-tarjeta" onClick={() => irA("pedidos")}><small>Pendientes</small><b>{r.pendientes}</b><span>esperando pago</span></button>
             <button className="adm-tarjeta" onClick={() => irA("pedidos")}><small>Para producir</small><b>{r.producir}</b><span>pagados y en el taller</span></button>
             <div className="adm-tarjeta"><small>Ticket promedio</small><b>{money(r.ticket)}</b><span>en {mes}</span></div>
+            <TarjetaStock s={r.stock} irA={irA} />
           </div>
 
           <p className="adm-label">Ventas de los últimos 30 días</p>
@@ -114,6 +123,31 @@ export default function Inicio() {
         </>
       )}
     </>
+  );
+}
+
+// Tarjeta «Stock»: cuántas piezas están en últimas unidades y sin stock. Cada mitad abre la lista filtrada.
+function TarjetaStock({ s, irA }) {
+  if (!s.con) {
+    return (
+      <button className="adm-tarjeta adm-tarjeta-stock vacia" onClick={() => irA("piezas")}>
+        <small>Stock</small>
+        <span>Todavía no controlás el stock de ninguna pieza. Cargalo en Piezas → la pieza → Stock.</span>
+      </button>
+    );
+  }
+  return (
+    <div className="adm-tarjeta adm-tarjeta-stock">
+      <small>Stock <span>· {s.con} {s.con === 1 ? "pieza con control" : "piezas con control"}</span></small>
+      <div className="adm-stock-dos">
+        <button className={"naranja" + (s.ultimas ? "" : " cero")} onClick={() => irA("piezas", { filtro: "ultimas" })}>
+          <b>{s.ultimas}</b><span>Últimas unidades</span><i aria-hidden>›</i>
+        </button>
+        <button className={"rojo" + (s.sin ? "" : " cero")} onClick={() => irA("piezas", { filtro: "sinstock" })}>
+          <b>{s.sin}</b><span>Sin stock</span><i aria-hidden>›</i>
+        </button>
+      </div>
+    </div>
   );
 }
 

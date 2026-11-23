@@ -1,6 +1,6 @@
 import "server-only";
 import crypto from "node:crypto";
-import { unstable_cache } from "next/cache";
+import { unstable_cache, revalidateTag } from "next/cache";
 import { createClient } from "@supabase/supabase-js";
 import { seedProducts, seedSettings, seedEnvios } from "@/data/seed";
 import { armarItems, totales, normalizarCodigo, problemaCupon } from "@/lib/precios";
@@ -40,9 +40,30 @@ export function adminDb() {
 
 const seed = () => ({ products: seedProducts, settings: seedSettings, envios: seedEnvios, source: "seed" });
 
+// Devuelve al stock las reservas vencidas (supabase/stock.sql). Si la base todavía no tiene
+// stock.sql, no pasa nada. Devuelve cuántos pedidos liberó.
+export async function liberarReservas(db = adminDb()) {
+  if (!db) return 0;
+  const { data, error } = await db.rpc("liberar_reservas_vencidas");
+  if (error) {
+    if (!/PGRST202|could not find the function/i.test(`${error.code} ${error.message}`)) console.error("liberar_reservas_vencidas:", error.message);
+    return 0;
+  }
+  return Number(data) || 0;
+}
+
+// La tienda se actualiza al instante (catálogo cacheado con el tag "catalogo"). Durante el render
+// de una página Next no deja revalidar: ahí se renueva sola a los 60 s.
+export function refrescarCatalogo() {
+  try {
+    revalidateTag("catalogo");
+  } catch {}
+}
+
 async function leerCatalogo() {
   const db = adminDb();
   if (!db) return seed();
+  await liberarReservas(db);
   const [{ data: products, error }, { data: rows }, envRes] = await Promise.all([
     db.from("products").select("*").eq("active", true).order("sort"),
     db.from("settings").select("*"),
@@ -70,8 +91,8 @@ export async function cotizar(body = {}) {
     const vuelta = vac.vuelta ? ` hasta el ${new Date(vac.vuelta + "T12:00").toLocaleDateString("es-AR", { day: "numeric", month: "long" })}` : "";
     return { error: `Estamos de vacaciones${vuelta}. Las compras vuelven a abrir pronto.`, status: 403 };
   }
-  const { items, error } = armarItems(products, body.items);
-  if (error) return { error, status: 409 };
+  const { items, error, sinStock } = armarItems(products, body.items);
+  if (error) return { error, status: 409, sinStock };
   if (!items.length) return { error: "El carrito está vacío", status: 400 };
   const envio = envios.find((e) => String(e.id) === String(body.shippingId)) || envios[0] || null;
 

@@ -1,6 +1,6 @@
 import "server-only";
 import crypto from "node:crypto";
-import { adminDb, sitio } from "@/lib/server";
+import { adminDb, refrescarCatalogo, sitio } from "@/lib/server";
 import { money } from "@/lib/format";
 import { numPedido } from "@/lib/precios";
 import { linkSeguimiento } from "@/lib/envio";
@@ -77,6 +77,15 @@ export async function procesarPago(paymentId, { pedidoEsperado } = {}) {
   if (!res?.ok) return { ...base, ok: false, resultado: "ignorado", detalle: { ...resumen, ...res } };
 
   if (res.avisar) await avisarDueno(db, orderId).catch((e) => console.error("Mail al dueño:", e));
+  // Stock: el cambio de estado ya movió el stock en la base (venta / devolución de la reserva).
+  // La tienda se actualiza y, si una pieza entró en «últimas unidades» o se quedó sin stock, mail.
+  if (res.cambio) {
+    const { data: st } = await db.from("orders").select("stock_estado").eq("id", orderId).maybeSingle();
+    if (st?.stock_estado) {
+      refrescarCatalogo();
+      await avisarStock(db).catch((e) => console.error("Aviso de stock:", e));
+    }
+  }
   return { ...base, ok: true, resultado: res.cambio ? "procesado" : "sin cambios", detalle: { ...resumen, ...res } };
 }
 
@@ -192,4 +201,45 @@ ${panel ? `<p style="margin-top:20px"><a href="${esc(panel)}" style="background:
 </div>`;
   const r = await enviarMail({ asunto: `🛎️ Pedido ${num} pagado · ${money(o.total)} · ${o.customer_name}`, html, texto });
   if (!r.ok) console.error("Mail al dueño no salió:", r.motivo);
+}
+
+// ---------- Mail al dueño cuando una pieza entra en «últimas unidades» o se queda sin stock ----------
+// tomar_avisos_stock (supabase/stock.sql) devuelve solo las piezas que CRUZARON un nivel desde el
+// último aviso y lo deja anotado: un mail por cruce, no por cada venta. Lo llaman el webhook (venta)
+// y el panel al guardar (por ejemplo, un pedido pasado a «Pagado» a mano).
+export async function avisarStock(db = adminDb()) {
+  if (!db) return { enviados: 0 };
+  const { data, error } = await db.rpc("tomar_avisos_stock");
+  if (error) {
+    if (!/PGRST202|could not find the function/i.test(`${error.code} ${error.message}`)) console.error("tomar_avisos_stock:", error.message);
+    return { enviados: 0 };
+  }
+  let enviados = 0;
+  for (const p of data || []) {
+    const r = await mailStock(p).catch((e) => ({ ok: false, motivo: String(e?.message || e) }));
+    if (r.ok) enviados++;
+    else if (r.motivo !== "sin configurar") console.error("Mail de stock no salió:", r.motivo);
+  }
+  return { enviados, piezas: data || [] };
+}
+
+export function mailStock(p) {
+  const sin = p.nivel === "sin";
+  const panel = sitio() ? `${sitio()}/admin` : "";
+  const asunto = sin ? `Sin stock: ${p.name} · tipificado` : `Últimas unidades: ${p.name} · tipificado`;
+  const linea = sin
+    ? `«${p.name}» se quedó sin stock. En la tienda se ve «sin stock» y no se puede comprar hasta que cargues más unidades.`
+    : `A «${p.name}» le ${p.stock === 1 ? "queda 1 unidad" : `quedan ${p.stock} unidades`}. En la tienda se ve «últimas unidades» (sin el número).`;
+  const texto = `${linea}
+
+Para cargar más: panel → Piezas → ${p.name} → Stock.${panel ? `
+${panel}` : ""}`;
+  const html = `<div style="font-family:${MAIL_TEXTO};font-size:15px;line-height:1.5;color:#26201c;max-width:520px">
+<div style="margin-bottom:14px">${logoMail()}</div>
+<h2 style="margin:0 0 8px;font-family:${MAIL_TITULO};font-weight:700;letter-spacing:-0.5px">${sin ? "Sin stock" : "Últimas unidades"}: ${esc(p.name)}</h2>
+<p style="margin:0 0 16px">${esc(linea)}</p>
+<p style="margin:0;color:#6b625b">Para cargar más: panel → Piezas → ${esc(p.name)} → Stock.</p>
+${panel ? `<p style="margin-top:20px"><a href="${esc(panel)}" style="background:#26201c;color:#fff;padding:10px 16px;border-radius:10px;text-decoration:none">Abrir el panel</a></p>` : ""}
+</div>`;
+  return enviarMail({ asunto, html, texto });
 }

@@ -7,6 +7,14 @@ import {
   Buscador, Filtros, Titulo, Esqueleto, Vacio, ErrorCarga, Hoja, mensajeError, descargar,
 } from "./ui";
 
+// Qué pasó con el stock de las piezas de este pedido (supabase/stock.sql)
+const STOCK_PEDIDO = {
+  reservado: "Reservado: si no se paga a tiempo, vuelve solo al stock",
+  vendido: "Descontado del stock (venta)",
+  liberado: "Devuelto al stock (no se pagó a tiempo, se rechazó o se canceló)",
+  devuelto: "Devuelto al stock a mano",
+};
+
 const MP = { approved: "Aprobado ✓", pending: "Pendiente", in_process: "En revisión", rejected: "Rechazado", cancelled: "Cancelado", refunded: "Devuelto", charged_back: "Contracargo" };
 
 // ---------- Contacto: WhatsApp / Instagram ----------
@@ -272,7 +280,7 @@ function Despacho({ o, onGuardado }) {
 
 // ===================== DETALLE =====================
 export function DetallePedido({ id, onCerrar }) {
-  const { db, toast, cambio } = useAdm();
+  const { db, toast, cambio, confirmar, refrescarTienda } = useAdm();
   const datos = useDatos(async () => {
     const [o, hist] = await Promise.all([
       q(db.from("orders").select("*").eq("id", id).maybeSingle()),
@@ -297,7 +305,28 @@ export function DetallePedido({ id, onCerrar }) {
     const { error } = await db.from("orders").update({ status: s }).eq("id", o.id);
     setBusy(false);
     if (error) return toast(mensajeError(error));
-    toast(`${numPedido(o.number)}: ${ETIQUETA_ESTADO[s]} ✓`);
+    // Stock: una reserva cancelada vuelve sola (la base); una venta cancelada, solo si el dueño quiere
+    if (s === "cancelado" && o.stock_estado === "vendido") {
+      const si = await confirmar({
+        titulo: "¿Devolver al stock?",
+        texto: "Las piezas de este pedido vuelven a quedar disponibles en la tienda. Si ya las mandaste o se rompieron, elegí «No».",
+        si: "Devolver al stock", no: "No", peligro: false,
+      });
+      if (si) return devolverStock(`${numPedido(o.number)}: Cancelado ✓ y devuelto al stock`);
+    }
+    toast(`${numPedido(o.number)}: ${ETIQUETA_ESTADO[s]} ✓${s === "cancelado" && o.stock_estado === "reservado" ? " La reserva volvió al stock" : ""}`);
+    if (o.stock_estado) refrescarTienda();
+    datos.recargar();
+    cambio();
+  };
+  const devolverStock = async (msg) => {
+    setBusy(true);
+    const { data, error } = await db.rpc("devolver_stock_pedido", { p_order: o.id });
+    setBusy(false);
+    if (error) toast(mensajeError(error));
+    else if (data?.ok === false) toast("Este pedido ya no tiene piezas para devolver al stock.");
+    else toast(msg || "Devuelto al stock ✓");
+    refrescarTienda();
     datos.recargar();
     cambio();
   };
@@ -343,7 +372,11 @@ export function DetallePedido({ id, onCerrar }) {
 
           {o.alerta && (
             <div className="adm-alerta" role="alert">
-              <span><b>⚠ {o.alerta}.</b> El pago se aprobó después de que venciera la reserva del cupón{o.coupon_code ? ` ${o.coupon_code}` : ""}. La plata entró, pero el cupón pudo haberse agotado mientras tanto: revisá cuántos usos tiene.</span>
+              <span>
+                <b>⚠ {o.alerta}.</b>
+                {/cup/.test(o.alerta) && <> El pago se aprobó después de que venciera la reserva del cupón{o.coupon_code ? ` ${o.coupon_code}` : ""}. La plata entró, pero el cupón pudo haberse agotado mientras tanto: revisá cuántos usos tiene.</>}
+                {/stock/.test(o.alerta) && <> El pago se aprobó después de que venciera la reserva y, mientras tanto, otra persona compró unidades de alguna de estas piezas: no alcanzó el stock para todo el pedido. La plata entró: fijate si podés hacerlas o hablá con el cliente.</>}
+              </span>
               <button className="adm-btn" disabled={busy} onClick={resolverAlerta}>Ya lo revisé</button>
             </div>
           )}
@@ -394,6 +427,10 @@ export function DetallePedido({ id, onCerrar }) {
             {o.shipping?.detalle && <p className="adm-ayuda">{o.shipping.detalle}</p>}
             <div className="adm-dato"><span>Mercado Pago</span><b>{o.mp_status ? MP[o.mp_status] || o.mp_status : "Todavía no pagó"}</b></div>
             {o.payment_id && <div className="adm-dato"><span>N.º de pago</span><b className="mono">{o.payment_id}</b></div>}
+            {o.stock_estado && <div className="adm-dato"><span>Stock</span><b>{STOCK_PEDIDO[o.stock_estado] || o.stock_estado}</b></div>}
+            {o.stock_estado === "vendido" && ["cancelado", "devuelto", "rechazado"].includes(o.status) && (
+              <button className="adm-btn" disabled={busy} onClick={() => devolverStock()}>Devolver las piezas al stock</button>
+            )}
           </div>
 
           {o.shipping_detail?.destino && <Despacho o={o} onGuardado={() => { datos.recargar(); cambio(); }} />}

@@ -93,6 +93,7 @@ Copiá `.env.example` como `.env.local` y completalo (las mismas variables que e
 2. **SQL Editor** → pegá todo **`supabase/schema.sql`** → Run. Crea tablas, seguridad (RLS), funciones de pedidos/pagos/cupones, el registro de avisos de Mercado Pago, el límite anti-abuso, el depósito de fotos y Realtime en `orders`.
    - Se puede correr de cero **o encima de una versión anterior**: no borra datos, solo agrega lo que falta. Correlo de nuevo cada vez que actualices el código.
 3. **SQL Editor** → **`supabase/seed.sql`** → Run (catálogo inicial, ajustes y opciones de entrega; no duplica).
+   - Después, **`supabase/stock.sql`** → Run (control de stock; ver «Control de stock: poner en marcha» más abajo). Las dos se pueden volver a correr cuando quieras.
 4. Cargá el mail del dueño (después se suman más desde Ajustes → Administradores):
    ```sql
    insert into admins (email) values ('mail-del-cliente@gmail.com');
@@ -194,6 +195,30 @@ Otras cosas que podés hacer:
 4. Guardar. El cliente lo escribe al pagar, en «¿Tenés un cupón?», y el descuento se calcula solo.
 5. Para pausarlo, apagá el interruptor. Ahí también ves cuántas veces se usó.
 
+### Stock (cuántas piezas hay)
+El stock es **opcional y por pieza**: mientras no lo prendas, la pieza se vende sin límite, como siempre.
+1. **Piezas →** entrá a la pieza → sección **Stock** → prendé **«Controlar stock»**.
+2. En **«Unidades disponibles»** escribí cuántas tenés (en el celu se abre el teclado de números) o usá **− / +**. Tocá **Guardar**.
+3. Listo: **se descuenta solo con cada venta**. No tenés que hacer nada más.
+
+**Qué ve el comprador** (nunca el número):
+- 10 o más (o sin control): nada.
+- Menos de 10: la etiqueta **«últimas unidades…|»** en la ficha y en el catálogo.
+- 0: **«sin stock…|»**, el botón dice «Sin stock» y no se puede comprar. La pieza sigue en la mesa.
+- El «10» se cambia en **Más → Ajustes → Stock** («Mostrar "últimas unidades" cuando queden menos de»).
+
+**Cómo se mueve solo:**
+- Cuando alguien va a pagar, sus piezas quedan **reservadas** (se descuentan) mientras tiene el link de Mercado Pago (30 minutos). Así dos personas no pueden comprar la última a la vez.
+- Si paga → queda como **venta**. Si el pago se rechaza, lo cancela o no paga a tiempo → **vuelve solo al stock**.
+- Si cancelás desde el panel un pedido **ya pagado**, te pregunta **«¿Devolver al stock?»** (por si la pieza ya salió o se rompió, podés decir que no). También está el botón «Devolver las piezas al stock» en el pedido.
+- Si alguien pagó tarde (después de que venció su reserva) y mientras tanto otro se llevó la última, el pedido igual queda pagado (la plata entró) con la alerta **«revisar stock»** para que decidas.
+
+**En el panel:**
+- **Piezas:** al lado de cada una, las unidades y una insignia: verde (hay), naranja «Últimas unidades», rojo «Sin stock», gris «Sin control». Filtros **Todas · Últimas unidades · Sin stock**.
+- **Inicio:** tarjeta **Stock** con cuántas están en últimas unidades y sin stock; tocala y te lleva a la lista filtrada.
+- **Historial** dentro de cada pieza: «Venta pedido #0123 −1», «Carga manual +50», «Reserva liberada pedido #0119 +1»…
+- **Mail:** te llega uno cuando una pieza entra en «últimas unidades» y otro cuando se queda sin stock (uno por vez, no uno por venta). Usa los mismos mails que el aviso de pedidos (`RESEND_API_KEY` y `MAIL_DUENO`).
+
 ### Envíos, vacaciones y ajustes
 - **Más → Envíos:** retiro en el taller (con dirección y horario), envío a coordinar, un costo fijo por zona (por ejemplo, CABA $ 4.500) o **Envío por Andreani** (el costo se calcula solo con el código postal; ver más abajo). El cliente elige al pagar y el costo se suma solo.
 - **Más → Ajustes → Modo vacaciones:** pausa las compras y muestra un cartel con la fecha de vuelta. La tienda se sigue viendo.
@@ -270,6 +295,9 @@ El precio que ve el comprador es: **referencia de Zipnova × factor × (1 + marg
 | `src/app/sitemap.js` · `robots.js` | Sitemap con un link por pieza y robots.txt |
 | `src/data/seed.js` | Catálogo, ajustes y envíos iniciales (se usan si no hay Supabase) |
 | `supabase/schema.sql` · `seed.sql` | Base de datos (se puede correr sobre una existente) y datos iniciales |
+| `supabase/stock.sql` | Control de stock: columnas, historial (`stock_movimientos`), reserva al crear el pedido, venta/devolución por estado, liberación de vencidas, carga manual y avisos por mail (se puede correr más de una vez) |
+| `src/lib/stock.js` | Niveles de stock (hay / últimas / sin) y textos; el comprador solo recibe `stock_estado`, nunca el número |
+| `src/app/api/stock` · `api/cron/stock` | «¿Alcanza?» (sí/no) al sumar al carrito · cron diario de Vercel que libera reservas vencidas (respaldo) |
 
 ## Pendientes (TODO)
 
@@ -278,6 +306,7 @@ El precio que ve el comprador es: **referencia de Zipnova × factor × (1 + marg
 - [ ] Para que el mail de seguimiento llegue a cualquier comprador, el remitente (`MAIL_DESDE`) tiene que usar un dominio verificado en Resend.
 - [ ] **Precios provisorios:** pino (hoy en $ 1 de prueba en la base), budinera, pochoclera y taza clásica no están en la lista. Corregirlos en el admin.
 - [ ] Correr `supabase/ronda-precios-palta.sql` en Supabase.
+- [ ] Correr `supabase/stock.sql` en Supabase y cargar el stock de las piezas que quieras controlar.
 - [ ] Compotera ($ 25.000): cargarla desde el panel cuando haya pieza y foto.
 - [ ] Confirmar qué colores ofrece en cada pieza (los cargados son estimados a partir de las fotos).
 - [ ] Revisar los textos de producción y envío con el cliente.
@@ -287,3 +316,22 @@ El precio que ve el comprador es: **referencia de Zipnova × factor × (1 + marg
 - [ ] Dominio propio (tipificado.com.ar en NIC.ar) → conectarlo en Vercel → actualizar `NEXT_PUBLIC_SITE_URL`, las URL de Supabase, el webhook de MP y el remitente de los mails.
 - [ ] Probar en un celular promedio de verdad. Si igual va lento, la calidad baja sola; los escalones están al principio de `Taller.jsx` (`NIVELES`: resolución, sombra, efectos).
 - [ ] En iPhone, el giroscopio pide permiso la primera vez que tocás la pantalla. Si no lo da, la pieza igual se mueve sola de un lado a otro.
+
+---
+
+## Control de stock: poner en marcha
+
+1. Supabase → **SQL Editor** → New query → pegá **todo** `supabase/stock.sql` → **Run**.
+   - No borra nada: todas las piezas quedan **sin control** (como hasta ahora) hasta que cargues números desde el panel.
+   - Se puede correr más de una vez, y también después de volver a correr `schema.sql` (no se pisan).
+2. Panel → **Más → Ajustes → Estado de la tienda**: «Base de datos» tiene que decir **«con control de stock»**.
+3. Cargá el stock en las piezas que quieras (Piezas → la pieza → Stock).
+4. Opcional, en Vercel: `CRON_SECRET` (cualquier texto largo) para que solo el cron de Vercel pueda llamar a `/api/cron/stock`.
+
+**Cómo está armado (para quien mantenga el código):**
+- `products.stock` (`null` = sin control, nunca negativo). La clave pública (anon) no puede leer `stock` ni `stock_aviso`; la tienda arma `stock_estado` en el servidor (`Tienda.jsx`).
+- **Reserva:** un trigger `BEFORE INSERT` en `orders` (lo dispara `crear_pedido`) bloquea las piezas con `FOR UPDATE` en orden fijo, verifica y descuenta; si no alcanza, el pedido no se crea (`sin_stock`, con `[{ id, name, agotada }]`). `crear_pedido` y `aplicar_pago` no se tocaron.
+- **Venta / devolución:** un trigger `BEFORE UPDATE OF status`: a «pagado» (o más) la reserva pasa a venta; a «cancelado / rechazado / devuelto» con la reserva tomada, vuelve al stock. Si estaba liberada y después se aprueba el pago, se vuelve a descontar lo que haya (alerta «revisar stock» si no alcanzó).
+- **Vencidas:** `liberar_reservas_vencidas()` (una a la vez, sin devolver dos veces; espera hasta 3 días si Mercado Pago dice que el pago está en proceso). Corre al crear pedidos, al leer el catálogo, con **pg_cron cada 5 min** (si el proyecto lo tiene) y con el **cron diario de Vercel** (`vercel.json`; en el plan gratis de Vercel el cron puede ser como mucho diario).
+- **Mails:** `tomar_avisos_stock()` devuelve solo las piezas que cruzaron un nivel desde el último aviso; lo llaman el webhook de pagos y el panel al guardar.
+- **Pruebas que se corrieron** (un Postgres real local, con schema.sql, seed.sql y stock.sql): venta que descuenta, reserva vencida que devuelve (y no devuelve dos veces), pago rechazado que devuelve, dos compras simultáneas de la última unidad (pasa una sola) y 20 compras a la vez sobre 3 unidades (pasan 3), «últimas unidades» con 9, «sin stock» con 0, carga manual que no pisa una venta en curso, devolución desde el panel, permisos (anon no ve el stock) y el mail (uno por cruce).
