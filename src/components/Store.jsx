@@ -45,6 +45,11 @@ function EtiquetaStock({ estado, className = "" }) {
   if (estado !== "ultimas" && estado !== "sin") return null;
   return (
     <span className={"stock-txt " + (estado === "sin" ? "sin " : "") + className}>
+      {estado === "sin" ? (
+        <svg className="stock-ico" viewBox="0 0 12 12" aria-hidden><circle cx="6" cy="6" r="4.6" fill="none" stroke="currentColor" strokeWidth="1.6" /><path d="M2.8 9.2 9.2 2.8" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" /></svg>
+      ) : (
+        <svg className="stock-ico" viewBox="0 0 12 12" aria-hidden><path d="M2.5 1h7M2.5 11h7M3.5 1c0 3 2.5 3.4 2.5 5S3.5 8 3.5 11M8.5 1c0 3-2.5 3.4-2.5 5s2.5 2 2.5 5" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" /></svg>
+      )}
       {estado === "sin" ? TXT_SIN : TXT_ULTIMAS}<span className="cursor-barra" aria-hidden />
     </span>
   );
@@ -608,11 +613,11 @@ function Ficha({ prod, settings, flash, vacaciones, con3d, cerrando, tiro, sinEn
             )}
           </div>
           <h3>{prod.name}<span className="cursor-barra" aria-hidden /></h3>
-          <EtiquetaStock estado={prod.stock_estado} className="en-ficha" />
           <p className="desc">{prod.description}</p>
           <p className="ficha-precio">
             {enOferta(prod) && <s className="precio-antes">{money(prod.price)}</s>}
             {money(precio)}
+            <EtiquetaStock estado={prod.stock_estado} className="en-ficha" />
           </p>
           {prod.colors?.length > 0 && (
             <>
@@ -643,7 +648,7 @@ function Ficha({ prod, settings, flash, vacaciones, con3d, cerrando, tiro, sinEn
               <span>{qty}</span>
               <button onClick={() => setQty((q) => Math.min(20, q + 1))} aria-label="Más" disabled={sinUnidades}>+</button>
             </div>
-            <button className="btn-oscuro" disabled={!!vacaciones || agotada || sinUnidades || sumando} onClick={sumar}>
+            <button className={"btn-oscuro" + (sinUnidades ? " sin-stock" : "")} disabled={!!vacaciones || agotada || sinUnidades || sumando} onClick={sumar}>
               {sinUnidades ? "Sin stock" : agotada ? "Agotada por ahora" : vacaciones ? "Volvemos pronto" : sumando ? "Un segundo…" : `Agregar al carrito · ${money(precio * qty)}`}
             </button>
           </div>
@@ -1191,7 +1196,12 @@ function HojaMaquina({ products, actual, abierta, visible, reducido, onAbrir, on
                         decoding="async"
                         onError={(e) => { if (e.currentTarget.src !== new URL(p.image_url, location.href).href) e.currentTarget.src = p.image_url; }}
                       />
-                      {p.badge && <span className="card-etiqueta">{etiquetaDe(p.badge)}</span>}
+                      {(p.badge || p.stock_estado === "ultimas" || p.stock_estado === "sin") && (
+                        <span className="card-sellos">
+                          {p.badge && <span className="card-etiqueta">{etiquetaDe(p.badge)}</span>}
+                          <EtiquetaStock estado={p.stock_estado} className="en-card" />
+                        </span>
+                      )}
                     </span>
                     <span className="card-info">
                       <b className="card-nombre"><Tipeo texto={p.name} ms={14} demora={320 + Math.min(k, 12) * 40} activo={abierta} reducido={reducido} /></b>
@@ -1201,7 +1211,6 @@ function HojaMaquina({ products, actual, abierta, visible, reducido, onAbrir, on
                           {(p.colors || []).slice(0, 5).map((c) => <span key={c.name} className={c.agotado ? "agotado" : ""} style={{ "--c": c.hex }} />)}
                         </span>
                       </span>
-                      <EtiquetaStock estado={p.stock_estado} className="en-card" />
                     </span>
                   </button>
                 ))}

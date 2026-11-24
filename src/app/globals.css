@@ -610,16 +610,31 @@ input, textarea, select { -webkit-user-select: text; user-select: text; -webkit-
   text-shadow: 0 0 6px color-mix(in oklch, var(--mesa) 85%, transparent), 0 1px 0 color-mix(in oklch, var(--mesa) 70%, transparent); }
 @media (prefers-reduced-motion: reduce) { .guia-abrir, .guia-mano, .guia-estela { animation: none !important; } }
 
-/* Stock: «últimas unidades…|» y «sin stock…|», sutiles y a máquina (Store.jsx, EtiquetaStock). Nunca un número. */
-.stock-txt { display: inline-block; font-family: var(--f-display); font-weight: 700; font-size: 15px; letter-spacing: -0.01em; line-height: 1.2; color: rgba(42, 35, 32, 0.72); white-space: nowrap; }
-.stock-txt .cursor-barra { margin-left: 0.06em; }
-.stock-txt.sin { color: #8f2f22; }
-.stock-txt.en-ficha { display: block; margin: -4px 0 10px; }
-.stock-txt.en-card { font-size: 13px; margin-top: -4px; }
-.stock-txt.en-carrito { display: block; font-size: 13px; margin: 2px 0 0; }
+/* Stock: «ÚLTIMAS UNIDADES…|» y «SIN STOCK…|» como sello de goma estampado (Store.jsx, EtiquetaStock). Nunca un número.
+   Fondo sólido propio: se lee igual sobre cualquier pared o mesa. Contraste: #2A1A10/#E8892B ≈ 6,6:1 · #FFF4E6/#B3261E ≈ 6,3:1. */
+.stock-txt { --sello-fondo: #E8892B; --sello-borde: #B5651A; --sello-tinta: #2A1A10;
+  position: relative; display: inline-flex; align-items: center; gap: 6px; min-height: 26px; padding: 4px 10px 3px 8px; box-sizing: border-box;
+  font-family: var(--f-display); font-weight: 700; font-size: 12px; letter-spacing: 0.05em; line-height: 1.1; text-transform: uppercase; white-space: nowrap;
+  background: var(--sello-fondo); color: var(--sello-tinta); border: 1.5px solid var(--sello-borde); border-radius: 3px 5px 3px 6px / 5px 3px 6px 3px;
+  box-shadow: 0 2px 5px rgba(30, 15, 5, 0.32), 0 0 0 1px rgba(255, 255, 255, 0.18); transform-origin: 50% 60%; animation: sello-cae 250ms cubic-bezier(0.3, 1.5, 0.5, 1) both; }
+.stock-txt.sin { --sello-fondo: #B3261E; --sello-borde: #7C1812; --sello-tinta: #FFF4E6; }
+/* leve textura de tinta: ruido que apaga un poco el color, como un sello con poca tinta */
+.stock-txt::after { content: ""; position: absolute; inset: 0; border-radius: inherit; pointer-events: none; opacity: 0.22; mix-blend-mode: multiply;
+  background: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='90' height='40'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='2' seed='7'/%3E%3CfeColorMatrix values='0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 1.6 -0.55'/%3E%3C/filter%3E%3Crect width='90' height='40' filter='url(%23n)'/%3E%3C/svg%3E"); }
+.stock-ico { flex: none; width: 12px; height: 12px; }
+.stock-txt .cursor-barra { margin-left: 0.04em; width: 0.1em; opacity: 0.85; animation: none; }
+.stock-txt.en-ficha { margin-left: 12px; vertical-align: middle; }
+.stock-txt.en-card { white-space: normal; max-width: 100%; letter-spacing: 0.03em; }
+.stock-txt.en-carrito { display: flex; width: max-content; margin: 4px 0 0; }
+.card-sellos { position: absolute; z-index: 2; top: 10px; left: 10px; display: flex; flex-direction: column; align-items: flex-start; gap: 6px; max-width: calc(100% - 20px); }
+.card-sellos .card-etiqueta { position: static; }
+@keyframes sello-cae { 0% { opacity: 0; transform: scale(1.15) rotate(-1.5deg); } 55% { opacity: 1; transform: scale(0.97) rotate(0.4deg); } 100% { opacity: 1; transform: none; } }
+@media (prefers-reduced-motion: reduce) { .stock-txt { animation: none; } }
+.ficha-precio { display: flex; flex-wrap: wrap; align-items: center; row-gap: 8px; }
 .card.sin-stock .card-foto img { opacity: 0.42; filter: grayscale(0.55); }
 .card.sin-stock .card-nombre, .card.sin-stock .card-fila { opacity: 0.55; }
 .item.sin-stock img { opacity: 0.45; filter: grayscale(0.55); }
 .item .no-hay-mas { color: #8f2f22; font-size: 13px; margin-top: 4px; }
 .aviso-stock { margin: 12px 0 4px; padding: 12px 14px; border-radius: 14px; background: rgba(161, 42, 31, 0.08); color: #7a2418; font-size: 14.5px; line-height: 1.45; }
 .ficha-cuerpo .btn-oscuro:disabled { cursor: not-allowed; }
+.ficha-cuerpo .btn-oscuro.sin-stock:disabled { opacity: 1; background: #B3261E; color: #FFF4E6; }
