@@ -36,10 +36,10 @@ export function Estado({ s }) {
   return <span className={"adm-estado e-" + String(s).replace(" ", "-")}>{ETIQUETA_ESTADO[s] || s}</span>;
 }
 
-export function Interruptor({ checked, onChange, label }) {
+export function Interruptor({ checked, onChange, label, disabled }) {
   return (
-    <label className="adm-switch" title={label}>
-      <input type="checkbox" checked={!!checked} onChange={(e) => onChange(e.target.checked)} aria-label={label} />
+    <label className={"adm-switch" + (disabled ? " off" : "")} title={label}>
+      <input type="checkbox" checked={!!checked} onChange={(e) => onChange(e.target.checked)} aria-label={label} disabled={disabled} />
       <span />
     </label>
   );

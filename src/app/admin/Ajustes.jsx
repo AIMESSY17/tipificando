@@ -2,6 +2,7 @@
 import { useEffect, useState } from "react";
 import { useAdm, useDatos, q, fechaLarga, hace, Titulo, Esqueleto, ErrorCarga, Interruptor, Segmento, mensajeError } from "./ui";
 import { umbralDe } from "@/lib/stock";
+import MercadoPago, { TARJETA } from "./MercadoPago";
 
 const TEXTOS = [
   ["tagline", "Frase de arriba de la tienda", 2],
@@ -22,6 +23,7 @@ export default function Ajustes() {
   const [v, setV] = useState(null);
   const [busy, setBusy] = useState(false);
   const [sucio, setSucio] = useState(false);
+  const [sub, setSub] = useState(null); // "mp" = pantalla de Mercado Pago
   useEffect(() => { if (datos.data) setV({ ...datos.data, stock_umbral: String(umbralDe(datos.data)), vacaciones: { activo: false, vuelta: "", mensaje: "", ...(datos.data.vacaciones || {}) } }); }, [datos.data]);
   const set = (k, x) => { setV((s) => ({ ...s, [k]: x })); setSucio(true); };
   const setVac = (k, x) => set("vacaciones", { ...v.vacaciones, [k]: x });
@@ -44,9 +46,20 @@ export default function Ajustes() {
     toast("Ajustes guardados ✓ La tienda ya está actualizada");
   };
 
+  const ir = (x) => { setSub(x); window.scrollTo(0, 0); };
+  if (sub === "mp") return <MercadoPago onVolver={() => ir(null)} />;
+
   return (
     <>
       <Titulo accion={<button className="adm-btn negro" onClick={guardar} disabled={!v || busy || !sucio}>{busy ? "Guardando…" : "Guardar"}</button>}>Ajustes</Titulo>
+      <p className="adm-label">Cobros</p>
+      <div className="adm-lista">
+        <button className="adm-fila-nav" onClick={() => ir("mp")}>
+          <span className="adm-ic-cuadro ic-mp"><svg viewBox="0 0 24 24" aria-hidden><path d={TARJETA} fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" /></svg></span>
+          <span className="adm-fila-nav-txt">Mercado Pago<small>Credenciales, aviso de pagos y modo prueba</small></span>
+          <i aria-hidden>›</i>
+        </button>
+      </div>
       {datos.error && !v ? (
         <ErrorCarga error={datos.error} reintentar={datos.recargar} />
       ) : !v ? (
@@ -102,7 +115,7 @@ export default function Ajustes() {
         </>
       )}
 
-      <EstadoTienda />
+      <EstadoTienda abrirMP={() => ir("mp")} />
       <Administradores />
 
       <p className="adm-label">Cuenta</p>
@@ -148,7 +161,7 @@ function MiClave() {
   );
 }
 
-function EstadoTienda() {
+function EstadoTienda({ abrirMP }) {
   const { api, toast } = useAdm();
   const [s, setS] = useState(null);
   const [mandando, setMandando] = useState(false);
@@ -167,15 +180,20 @@ function EstadoTienda() {
     punto = s.cobrando ? (s.prueba ? "amarillo" : "verde") : "rojo";
     titulo = s.cobrando ? (s.prueba ? "Modo prueba" : "Cobrando de verdad") : "Mercado Pago no está activo";
     texto = s.cobrando
-      ? s.prueba ? "MP_MODO=prueba: la tienda muestra la franja «Modo prueba». Sacalo para cobrar de verdad." : "Los pagos se acreditan en tu Mercado Pago."
-      : `Los clientes solo pueden comprar con «Copiar pedido» o DM.${s.faltan?.length ? ` Faltan en Vercel: ${s.faltan.join(", ")}.` : ""}`;
+      ? s.prueba
+        ? s.modoFuente === "vercel"
+          ? "MP_MODO=prueba en Vercel: la tienda muestra la franja «Modo prueba». Sacalo para cobrar de verdad."
+          : "Modo prueba activado (Ajustes → Mercado Pago): la tienda muestra la franja «Modo prueba». Apagalo para cobrar de verdad."
+        : "Los pagos se acreditan en tu Mercado Pago."
+      : `Los clientes solo pueden comprar con «Copiar pedido» o DM.${s.faltanVercel?.length ? ` Faltan en Vercel: ${s.faltanVercel.join(", ")}.` : ""}${s.faltanPanel?.length ? ` Falta cargar en Ajustes → Mercado Pago: ${s.faltanPanel.join(" y ")}.` : ""}`;
   }
+  const verMP = s && !s.error && (!s.cobrando || s.prueba);
   return (
     <>
       <p className="adm-label">Estado de la tienda</p>
       <div className="adm-caja adm-mp">
         <span className={"adm-semaforo " + punto} aria-hidden />
-        <div><b>{titulo}</b>{texto && <p>{texto}</p>}</div>
+        <div><b>{titulo}</b>{texto && <p>{texto}</p>}{verMP && <button className="adm-link" onClick={abrirMP}>Abrir Mercado Pago ›</button>}</div>
         <button className="adm-mini" onClick={cargar}>Revisar</button>
       </div>
       {s?.checks && (

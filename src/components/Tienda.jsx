@@ -3,7 +3,8 @@
 import { preload } from "react-dom";
 import Store from "./Store";
 import { fotoChica } from "@/lib/fotos";
-import { getCatalog, modoPrueba, pagosActivos } from "@/lib/server";
+import { getCatalog } from "@/lib/server";
+import { modoPruebaDe, pagosActivos } from "@/lib/credenciales";
 import { nivelStock, umbralDe } from "@/lib/stock";
 
 export const piezaDe = (products, slug) => (slug ? products.findIndex((p) => p.slug === String(slug)) : -1);
@@ -20,7 +21,7 @@ const conDemo = (products, demo) => {
 };
 
 export async function Tienda({ slug, demo }) {
-  const catalogo = await getCatalog();
+  const [catalogo, pagos] = await Promise.all([getCatalog(), pagosActivos()]);
   const { settings: todos, envios } = catalogo;
   const products = conDemo(catalogo.products, demo);
   // el factor, el margen y la tabla de respaldo de envíos son privados: no viajan al navegador
@@ -36,5 +37,5 @@ export async function Tienda({ slug, demo }) {
     preload(fotoChica(p0.image_url), { as: "fetch", crossOrigin: "anonymous", fetchPriority: "high", media: "(max-width: 699.98px)" });
     preload(p0.image_url, { as: "fetch", crossOrigin: "anonymous", fetchPriority: "high", media: "(min-width: 700px)" });
   }
-  return <Store products={publicos} settings={settings} envios={envios} inicial={inicial} modoPrueba={modoPrueba()} pagos={pagosActivos()} />;
+  return <Store products={publicos} settings={settings} envios={envios} inicial={inicial} modoPrueba={modoPruebaDe(todos).activo} pagos={pagos} />;
 }

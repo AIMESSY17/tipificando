@@ -93,7 +93,7 @@ function Panel({ db, session }) {
       body: body ? JSON.stringify(body) : undefined,
     });
     const j = await r.json().catch(() => ({}));
-    if (!r.ok) return { error: j.error || "Algo salió mal. Probá de nuevo." };
+    if (!r.ok) return { ...j, error: j.error || "Algo salió mal. Probá de nuevo.", status: r.status };
     return j;
   }, [session]);
 

@@ -4,6 +4,7 @@ import { adminDb, refrescarCatalogo, sitio } from "@/lib/server";
 import { money } from "@/lib/format";
 import { numPedido } from "@/lib/precios";
 import { linkSeguimiento } from "@/lib/envio";
+import { credencialesMP, llamarMP } from "@/lib/credenciales";
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 export const esUuid = (s) => UUID.test(String(s || ""));
@@ -34,16 +35,12 @@ export function firmaValida({ secret, signature, requestId, dataId }) {
 // Devuelve { ok, resultado, orderId, mpStatus, detalle, reintentar }
 export async function procesarPago(paymentId, { pedidoEsperado } = {}) {
   const db = adminDb();
-  const token = process.env.MP_ACCESS_TOKEN;
+  const { token } = await credencialesMP(); // la del panel o, de respaldo, la variable de entorno
   if (!db || !token) return { ok: false, resultado: "error", detalle: { motivo: "falta configuración" } };
 
   let pay;
   try {
-    const r = await fetch(`https://api.mercadopago.com/v1/payments/${encodeURIComponent(paymentId)}`, {
-      headers: { Authorization: `Bearer ${token}` },
-      cache: "no-store",
-      signal: AbortSignal.timeout(10000),
-    });
+    const r = await llamarMP(`/v1/payments/${encodeURIComponent(paymentId)}`, { timeout: 10000 });
     if (r.status === 404) return { ok: false, resultado: "ignorado", detalle: { motivo: "el pago no existe en esta cuenta" } };
     if (!r.ok) return { ok: false, resultado: "error", reintentar: true, detalle: { motivo: `MP respondió ${r.status}` } };
     pay = await r.json();

@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
-import { adminDb, cotizar, huellaIp, liberarReservas, modoPrueba, pagosActivos, refrescarCatalogo, sitio, getCatalog } from "@/lib/server";
+import { adminDb, cotizar, huellaIp, liberarReservas, refrescarCatalogo, sitio, getCatalog } from "@/lib/server";
+import { llamarMP, modoPrueba, pagosActivos } from "@/lib/credenciales";
 import { MINUTOS_RESERVA, copiaEnvio, itemsParaMP } from "@/lib/precios";
 import { MODALIDADES } from "@/lib/envio";
 import { validarEntrega } from "@/lib/zipnova";
@@ -22,12 +23,12 @@ function faltantesDe(error) {
 }
 
 export async function POST(req) {
-  if (!pagosActivos()) return err("Mercado Pago todavía no está activado. Usá «Copiar pedido» o «Enviar por DM».", 503);
+  // Credenciales: primero las del panel (cifradas en la base); si no hay, las variables de entorno
+  if (!(await pagosActivos())) return err("Mercado Pago todavía no está activado. Usá «Copiar pedido» o «Enviar por DM».", 503);
   const db = adminDb();
-  const token = process.env.MP_ACCESS_TOKEN;
   const site = sitio();
   // Mercado Pago necesita HTTPS para volver a la tienda y para avisar los pagos (webhook)
-  if (!/^https:\/\//i.test(site) && !modoPrueba()) {
+  if (!/^https:\/\//i.test(site) && !(await modoPrueba())) {
     console.error("NEXT_PUBLIC_SITE_URL tiene que empezar con https:// para cobrar con Mercado Pago:", site);
     return err("Mercado Pago no está bien configurado. Usá «Copiar pedido» o «Enviar por DM».", 503);
   }
@@ -151,11 +152,11 @@ export async function POST(req) {
 
   let j = {};
   try {
-    const r = await fetch("https://api.mercadopago.com/checkout/preferences", {
+    const r = await llamarMP("/checkout/preferences", {
       method: "POST",
-      headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json", "X-Idempotency-Key": String(orderId) },
-      body: JSON.stringify(pref),
-      signal: AbortSignal.timeout(15000),
+      headers: { "X-Idempotency-Key": String(orderId) },
+      body: pref,
+      timeout: 15000,
     });
     j = await r.json().catch(() => ({}));
     if (!r.ok || !j.init_point) throw new Error(`MP ${r.status} ${j.message || ""}`);

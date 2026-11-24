@@ -1,9 +1,11 @@
 import { NextResponse } from "next/server";
-import { adminDb, huellaIp, modoPrueba } from "@/lib/server";
+import { adminDb, huellaIp } from "@/lib/server";
 import { firmaValida, procesarPago } from "@/lib/pagos";
+import { credencialesMP, modoPruebaDe, MODO_KEY } from "@/lib/credenciales";
 
 // Mercado Pago avisa acá cuando cambia un pago.
-// 1) Se valida la firma (MP_WEBHOOK_SECRET es obligatoria; solo con MP_MODO=prueba se acepta sin clave).
+// 1) Se valida la firma con la clave secreta del webhook (la del panel o, de respaldo, la variable de
+//    entorno). Es obligatoria: solo en modo prueba se acepta un aviso sin clave.
 // 2) Se consulta el pago a MP (no se confía en lo que llega) y se aplica al pedido de forma idempotente.
 // 3) Cada aviso queda registrado en la tabla mp_webhooks para poder revisar problemas.
 export const dynamic = "force-dynamic";
@@ -16,9 +18,18 @@ export async function POST(req) {
   const dataId = String(url.searchParams.get("data.id") || body?.data?.id || url.searchParams.get("id") || "").slice(0, 64);
   const requestId = req.headers.get("x-request-id") || "";
   const signature = req.headers.get("x-signature") || "";
-  const secret = process.env.MP_WEBHOOK_SECRET;
-
-  const firmaOk = secret ? firmaValida({ secret, signature, requestId, dataId }) : modoPrueba();
+  const cred = await credencialesMP();
+  let secret = cred.secreto;
+  let firmaOk = secret ? firmaValida({ secret, signature, requestId, dataId }) : modoPruebaDe({ [MODO_KEY]: cred.info.modoPanel }).activo;
+  // Si la firma no coincide, puede que la clave se haya cambiado en el panel y esta instancia tenga
+  // la anterior en memoria: se relee la base una vez.
+  if (secret && !firmaOk) {
+    const f = await credencialesMP({ fresco: true });
+    if (f.secreto && f.secreto !== secret) {
+      secret = f.secreto;
+      firmaOk = firmaValida({ secret, signature, requestId, dataId });
+    }
+  }
   const db = adminDb();
 
   const log = async (fila) => {
@@ -35,7 +46,7 @@ export async function POST(req) {
       const ip = huellaIp(req);
       const { error } = await db.from("mp_webhooks").insert({
         ip, firma_ok: false, resultado: "firma inválida",
-        detalle: { motivo: secret ? "la firma no coincide" : "falta MP_WEBHOOK_SECRET" },
+        detalle: { motivo: secret ? "la firma no coincide" : "falta la clave secreta del webhook" },
       });
       if (error) console.error("mp_webhooks:", error.message);
     }

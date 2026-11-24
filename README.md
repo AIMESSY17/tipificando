@@ -94,6 +94,7 @@ Copiá `.env.example` como `.env.local` y completalo (las mismas variables que e
    - Se puede correr de cero **o encima de una versión anterior**: no borra datos, solo agrega lo que falta. Correlo de nuevo cada vez que actualices el código.
 3. **SQL Editor** → **`supabase/seed.sql`** → Run (catálogo inicial, ajustes y opciones de entrega; no duplica).
    - Después, **`supabase/stock.sql`** → Run (control de stock; ver «Control de stock: poner en marcha» más abajo). Las dos se pueden volver a correr cuando quieras.
+   - Y **`supabase/credenciales.sql`** → Run (para que el dueño cargue Mercado Pago desde el panel; ver «Mercado Pago desde el panel»). También se puede volver a correr.
 4. Cargá el mail del dueño (después se suman más desde Ajustes → Administradores):
    ```sql
    insert into admins (email) values ('mail-del-cliente@gmail.com');
@@ -112,15 +113,45 @@ Copiá `.env.example` como `.env.local` y completalo (las mismas variables que e
 
 ## 4. Mercado Pago (cobrando de verdad)
 
-1. Con la cuenta **del cliente**: mercadopago.com.ar/developers → Tus integraciones → Crear aplicación (Checkout Pro).
-2. **Credenciales de producción** → copiá el Access Token (empieza con `APP_USR-`) en Vercel como `MP_ACCESS_TOKEN`.
-3. **Webhooks → Configurar notificaciones** (modo productivo):
-   - URL: `https://TU-URL/api/mp-webhook`
-   - Evento: **Pagos**
-   - Guardá y copiá la **clave secreta** en Vercel como `MP_WEBHOOK_SECRET`. Es **obligatoria**: sin ella se rechaza todo aviso y los pedidos no pasan solos a «Pagado».
-   - Con «Simular notificación» podés probar que llega: en el panel aparece como «Último aviso de Mercado Pago» (un pago simulado no existe, así que figura como «ignorado»; lo importante es que la firma sea válida).
-4. Redeploy y entrá a **Ajustes → Estado de la tienda**: tienen que estar todos los tildes en verde y el nombre de la cuenta de Mercado Pago tiene que ser **la del cliente**.
-5. Hacé una compra real chica (y devolvela desde Mercado Pago si querés).
+Las credenciales las carga **el dueño, solo, desde el panel** (Ajustes → Mercado Pago): nadie más tiene que verlas. Quien mantiene el sitio solo prepara la clave del servidor y la tabla (una vez).
+
+### Mercado Pago desde el panel
+
+**A. Quien maneja Vercel y Supabase (una sola vez):**
+
+1. Generá la clave del servidor (32 bytes al azar, en base64) en tu compu:
+   ```bash
+   node -e "console.log(require('crypto').randomBytes(32).toString('base64'))"
+   ```
+   (o `openssl rand -base64 32`). Sale algo como `q2V…=` de 44 caracteres.
+2. Vercel → Settings → Environment Variables → **`CREDENCIALES_KEY`** = esa clave, en **Production**. Va **solo en Vercel**: no la pongas en `.env.local`, ni en el código, ni en GitHub, ni la mandes por chat. Con ella se descifran las credenciales: si se pierde o se cambia, el dueño tiene que volver a cargarlas (mientras tanto la tienda usa las variables de respaldo, si están).
+   - Ojo: un `.env.local` que apunte a la **misma** base de Supabase con otra clave no puede leer las credenciales del panel, y si alguien las guarda desde ahí, quedan cifradas con esa otra clave y producción deja de poder leerlas (el panel lo avisa: «se guardó con otra CREDENCIALES_KEY»).
+3. Supabase → **SQL Editor** → New query → pegá **todo** `supabase/credenciales.sql` → **Run**. No borra nada y se puede correr más de una vez. Crea las tablas `credenciales` y `credenciales_cambios` con RLS activada **y sin políticas**, y les saca los permisos a `anon` y `authenticated`: desde el navegador no se pueden leer ni escribir, ni siquiera con la sesión de un admin. Solo el servidor (service role).
+4. **Redeploy.**
+
+**B. El dueño (desde el celular o la compu):** Panel → **Más → Ajustes → Mercado Pago** y seguir la guía de la pantalla:
+
+1. En mercadopago.com.ar/developers → Tus integraciones, con la cuenta **del negocio**: Crear aplicación (Checkout Pro).
+2. **Credenciales de producción** → copiar el **Access Token** (`APP_USR-…`) y pegarlo en el panel.
+3. **Webhooks → Configurar notificaciones → Modo productivo** → pegar la URL que muestra el panel (botón «Copiar»: `https://TU-URL/api/mp-webhook`) → evento **Pagos** → Guardar.
+4. Copiar la **clave secreta** que muestra Mercado Pago y pegarla en el panel. **Guardar**: el panel pide la contraseña del panel, prueba el token con Mercado Pago y recién ahí lo guarda.
+5. «Probar conexión» y, en Mercado Pago, «Simular notificación»: en el panel tiene que aparecer «firma válida» (figura «ignorado» porque un pago simulado no existe).
+6. Hacer una compra real chica (y devolverla desde Mercado Pago si quiere).
+
+**Cómo está armado (para quien mantenga el código):**
+- **Cifrado:** AES-256-GCM con `CREDENCIALES_KEY` (`src/lib/credenciales.js`). En la base queda `v1.<huella de la clave>.<iv>.<tag>.<cifrado>` (la base rechaza cualquier otra cosa) y el nombre de la credencial va como dato autenticado, así un valor no se puede mover a otra fila. Se guardan también los últimos 4 caracteres, el nombre/apodo/id de la cuenta y si es de prueba.
+- **De dónde sale cada credencial:** primero la del panel y, si no hay (o no se puede descifrar), las variables `MP_ACCESS_TOKEN` / `MP_WEBHOOK_SECRET`. Así la transición no rompe nada: hasta que el dueño cargue las suyas, la tienda sigue con las de Vercel. Cuando estén en el panel, las de Vercel se pueden borrar (o dejarlas de respaldo).
+- **Cache:** lo descifrado queda solo en la memoria de cada instancia 3 minutos (nunca en el cache de Next, que es compartido). Al guardar se invalida en esa instancia; si otra instancia todavía tiene el token anterior y Mercado Pago le responde 401, relee la base y reintenta. Lo mismo con la firma del webhook.
+- **Pantalla:** nunca recibe un valor (ni cifrado): solo «•••• 1234», la fecha, quién lo cargó y la cuenta. Para cambiar una credencial se pega de nuevo.
+- **Al guardar** (`POST /api/admin/mercadopago`, solo admins): formato → límite de intentos (6 cada 15 min por admin) → contraseña del panel verificada con Supabase (sesión aparte que se cierra en el acto) → `/users/me` de Mercado Pago (si el token es inválido no se guarda; si es de otro país, tampoco; si es de un usuario de prueba —`TESTUSER…`, etiqueta `test_user` o credencial `TEST-`— pide confirmación). Cada cambio queda en `credenciales_cambios` (quién, cuándo, últimos 4; sin valores), que no se puede editar ni borrar.
+- **Modo prueba:** se prende y apaga en el panel (`settings.mp_modo_prueba`). Si en Vercel existe `MP_MODO`, gana la variable y el panel lo indica. Con una cuenta de prueba y el modo prueba apagado, el panel avisa que nadie va a poder pagar.
+- **Nada de credenciales** en logs, en errores ni en «Estado de la tienda».
+
+### Con variables de entorno (respaldo, como antes)
+
+Si preferís, seguís pudiendo poner `MP_ACCESS_TOKEN` y `MP_WEBHOOK_SECRET` en Vercel (pasos 1-3 de arriba, copiando a Vercel en vez de al panel) y hacer Redeploy. Se usan solo cuando el panel no tiene nada cargado.
+
+Después de cualquiera de los dos caminos, entrá a **Ajustes → Estado de la tienda**: tienen que estar todos los tildes en verde y el nombre de la cuenta de Mercado Pago tiene que ser **la del cliente**.
 
 **Cómo funciona el cobro:**
 - El servidor arma el total con los precios de la base, la oferta, el cupón y el envío. Nunca usa lo que manda el navegador.
@@ -130,7 +161,7 @@ Copiá `.env.example` como `.env.local` y completalo (las mismas variables que e
 - **Anti-abuso:** máximo 10 intentos de pago por IP cada 10 minutos (tabla `checkout_intentos`).
 - **Al volver de Mercado Pago**, `/gracias` muestra el número de pedido y el estado real de la base (si el aviso todavía no llegó, consulta el pago a Mercado Pago en el momento).
 
-**Para probar con credenciales de prueba** (opcional): usá el token de prueba y agregá `MP_MODO=prueba`. La tienda muestra la franja «Modo prueba» y el webhook acepta avisos aunque no haya clave. En producción, **sacá `MP_MODO`**.
+**Para probar con credenciales de prueba** (opcional): cargá el token de un usuario de prueba en Ajustes → Mercado Pago (el panel pide confirmarlo) y prendé **Modo prueba** ahí mismo. La tienda muestra la franja «Modo prueba» y el webhook acepta avisos aunque no haya clave. Para cobrar de verdad, volvé a cargar el token de producción y apagá el modo prueba. (`MP_MODO=prueba` en Vercel sigue funcionando y gana sobre el panel; en producción, **sacala**.)
 
 ## Aviso por mail al dueño (opcional)
 
@@ -222,7 +253,8 @@ El stock es **opcional y por pieza**: mientras no lo prendas, la pieza se vende 
 ### Envíos, vacaciones y ajustes
 - **Más → Envíos:** retiro en el taller (con dirección y horario), envío a coordinar, un costo fijo por zona (por ejemplo, CABA $ 4.500) o **Envío por Andreani** (el costo se calcula solo con el código postal; ver más abajo). El cliente elige al pagar y el costo se suma solo.
 - **Más → Ajustes → Modo vacaciones:** pausa las compras y muestra un cartel con la fecha de vuelta. La tienda se sigue viendo.
-- **Más → Ajustes:** textos de la tienda, WhatsApp, tiempo de producción general, datos del negocio (van al pie y al comprobante), **Estado de la tienda** (tildes verdes/rojos: base de datos, Mercado Pago, webhook, URL y mails) y **administradores** (para invitar a alguien más al panel).
+- **Más → Ajustes → Mercado Pago:** tus credenciales de Mercado Pago (las cargás vos; se guardan cifradas y no se vuelven a mostrar), la URL del aviso de pagos para copiar, «Probar conexión», el **modo prueba** y el registro de quién cambió qué y cuándo.
+- **Más → Ajustes:** textos de la tienda, WhatsApp, tiempo de producción general, datos del negocio (van al pie y al comprobante), **Estado de la tienda** (tildes verdes/rojos: base de datos, Mercado Pago, webhook, credenciales, URL y mails) y **administradores** (para invitar a alguien más al panel).
 
 ### Envío por Andreani (cálculo automático)
 La tienda **cotiza** el envío con Zipnova según el código postal del cliente, pero **no despacha nada**: el envío real lo cargás vos a mano con tu cuenta de Andreani.
@@ -284,6 +316,9 @@ El precio que ve el comprador es: **referencia de Zipnova × factor × (1 + marg
 | `src/lib/precios.js` | Precio de oferta, cupones, envíos y totales (el servidor cobra con esto) |
 | `src/lib/server.js` | Catálogo (cacheado), cotización del carrito en el servidor, variables obligatorias, chequeo de admin |
 | `src/lib/pagos.js` | Firma de los avisos de MP, procesamiento idempotente de pagos y mail al dueño |
+| `src/lib/credenciales.js` | Credenciales de MP: cifrado AES-256-GCM (`CREDENCIALES_KEY`), lectura de la base con respaldo a las variables de entorno, cache en memoria, modo prueba, `pagosActivos` y llamadas a MP con el token vigente |
+| `src/app/admin/MercadoPago.jsx` · `src/app/api/admin/mercadopago` | Ajustes → Mercado Pago (pantalla) y su API: guardar con contraseña y prueba en `/users/me`, probar conexión, modo prueba; nunca devuelve valores |
+| `supabase/credenciales.sql` | Tablas `credenciales` (cifradas) y `credenciales_cambios` (registro inmutable), RLS sin políticas y sin permisos para el navegador |
 | `src/app/api/cotizar` | Calcula el total en «Pagar» (cupón y envío) |
 | `src/lib/envio.js` · `src/lib/zipnova.js` | Envío por Andreani: precio de referencia, factor y margen (`envio.js`, compartido) y cotización con Zipnova con cache de 30 min y tiempo máximo de 6 s (`zipnova.js`, solo servidor; las claves salen de `process.env`) |
 | `src/app/admin/EnviosAuto.jsx` | Ajustes de la cotización, simulador y tabla de respaldo |
@@ -307,6 +342,7 @@ El precio que ve el comprador es: **referencia de Zipnova × factor × (1 + marg
 - [ ] **Precios provisorios:** pino (hoy en $ 1 de prueba en la base), budinera, pochoclera y taza clásica no están en la lista. Corregirlos en el admin.
 - [ ] Correr `supabase/ronda-precios-palta.sql` en Supabase.
 - [ ] Correr `supabase/stock.sql` en Supabase y cargar el stock de las piezas que quieras controlar.
+- [ ] **Mercado Pago desde el panel:** crear `CREDENCIALES_KEY` en Vercel, correr `supabase/credenciales.sql`, Redeploy, y que el dueño cargue sus credenciales en Ajustes → Mercado Pago. Después, borrar `MP_ACCESS_TOKEN` / `MP_WEBHOOK_SECRET` de Vercel (opcional) y `MP_MODO` si estaba.
 - [ ] Compotera ($ 25.000): cargarla desde el panel cuando haya pieza y foto.
 - [ ] Confirmar qué colores ofrece en cada pieza (los cargados son estimados a partir de las fotos).
 - [ ] Revisar los textos de producción y envío con el cliente.

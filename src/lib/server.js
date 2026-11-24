@@ -13,21 +13,18 @@ const service = process.env.SUPABASE_SERVICE_ROLE_KEY;
 
 export const hasSupabase = Boolean(url && service);
 
-// Variables sin las cuales no se cobra con Mercado Pago. Si falta alguna, la tienda
+// Variables de entorno sin las cuales no se cobra con Mercado Pago. Si falta alguna, la tienda
 // sigue andando y se compra con «Copiar pedido» / «DM».
+// Las credenciales de Mercado Pago se cargan en el panel (Ajustes → Mercado Pago) y, como
+// respaldo, en MP_ACCESS_TOKEN / MP_WEBHOOK_SECRET: ver src/lib/credenciales.js
+// (pagosActivos y modoPrueba viven ahí).
 export const OBLIGATORIAS = [
   "NEXT_PUBLIC_SUPABASE_URL",
   "NEXT_PUBLIC_SUPABASE_ANON_KEY",
   "SUPABASE_SERVICE_ROLE_KEY",
-  "MP_ACCESS_TOKEN",
-  "MP_WEBHOOK_SECRET",
   "NEXT_PUBLIC_SITE_URL",
 ];
 export const faltantes = () => OBLIGATORIAS.filter((k) => !String(process.env[k] || "").trim());
-export const pagosActivos = () => faltantes().length === 0;
-
-// La franja «Modo prueba» aparece solo si se pide explícitamente. Por defecto, todo es producción.
-export const modoPrueba = () => process.env.MP_MODO === "prueba";
 
 // URL del sitio, sin barra final
 export const sitio = () => String(process.env.NEXT_PUBLIC_SITE_URL || "").trim().replace(/\/+$/, "");
