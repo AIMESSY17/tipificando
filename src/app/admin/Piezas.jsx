@@ -418,7 +418,7 @@ export function Editor({ prod, umbral = 10, usados = [], pedestalGeneral = "trav
       setUnidades(ahora != null ? String(ahora) : "");
       setErr(`Mientras editabas entró una compra o se liberó una reserva: ahora ${ahora == null ? "no tiene control de stock" : `hay ${ahora}`}. Revisá el número y tocá Guardar de nuevo.`);
     } else if (/PGRST202|could not find the function/i.test(`${error.code} ${error.message}`)) {
-      setErr("Para usar el stock falta actualizar la base: corré supabase/stock.sql en Supabase (SQL Editor). El resto se guardó.");
+      setErr("Para usar el stock falta una actualización técnica de la base. Avisale a quien te hizo la tienda. El resto se guardó.");
     } else setErr("No se pudo guardar el stock: " + mensajeError(error));
     return false;
   };

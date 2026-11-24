@@ -131,7 +131,7 @@ export function mensajeError(e) {
   if (/duplicate|23505/i.test(m)) return "Ya existe uno igual. Cambiá el nombre o el código.";
   if (/fetch|network|Failed/i.test(m)) return "Parece que no hay conexión. Revisá internet y probá de nuevo.";
   if (/permission|policy|JWT|not authorized|401/i.test(m)) return "Tu sesión venció o no tenés permiso. Salí y volvé a entrar.";
-  if (/does not exist|column|relation/i.test(m)) return "Falta actualizar la base de datos: corré de nuevo supabase/schema.sql (ver README).";
+  if (/does not exist|column|relation/i.test(m)) return "Falta una actualización técnica de la base de datos. Avisale a quien te hizo la tienda.";
   return m || "Algo salió mal. Probá de nuevo.";
 }
 

@@ -182,10 +182,10 @@ function EstadoTienda({ abrirMP }) {
     texto = s.cobrando
       ? s.prueba
         ? s.modoFuente === "vercel"
-          ? "MP_MODO=prueba en Vercel: la tienda muestra la franja «Modo prueba». Sacalo para cobrar de verdad."
+          ? (s.soporte ? "MP_MODO=prueba en Vercel: la tienda muestra la franja «Modo prueba». Sacalo para cobrar de verdad." : "Modo prueba: la tienda muestra la franja «Modo prueba». Lo controla tu desarrollador.")
           : "Modo prueba activado (Ajustes → Mercado Pago): la tienda muestra la franja «Modo prueba». Apagalo para cobrar de verdad."
         : "Los pagos se acreditan en tu Mercado Pago."
-      : `Los clientes solo pueden comprar con «Copiar pedido» o DM.${s.faltanVercel?.length ? ` Faltan en Vercel: ${s.faltanVercel.join(", ")}.` : ""}${s.faltanPanel?.length ? ` Falta cargar en Ajustes → Mercado Pago: ${s.faltanPanel.join(" y ")}.` : ""}`;
+      : `Los clientes solo pueden comprar con «Copiar pedido» o DM.${s.faltanVercel?.length ? ` Faltan en Vercel: ${s.faltanVercel.join(", ")}.` : ""}${s.faltaTecnico ? " Falta un ajuste técnico. Avisale a quien te hizo la tienda." : ""}${s.faltanPanel?.length ? ` Falta cargar en Ajustes → Mercado Pago: ${s.faltanPanel.join(" y ")}.` : ""}`;
   }
   const verMP = s && !s.error && (!s.cobrando || s.prueba);
   return (

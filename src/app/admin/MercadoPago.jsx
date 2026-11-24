@@ -19,12 +19,20 @@ const NOMBRES = { mp_access_token: "Access Token", mp_webhook_secret: "Clave sec
 const ACCIONES = { mp_webhook_secret: { cargado: "cargada", cambiado: "cambiada" } }; // «la clave… cargada»
 const accion = (c) => ACCIONES[c.proveedor]?.[c.accion] || c.accion;
 
+const AVISAR = "Avisale a quien te hizo la tienda.";
 const PROBLEMA = {
   falta_clave: "Hay una guardada, pero falta CREDENCIALES_KEY en Vercel para leerla.",
   clave_invalida: "CREDENCIALES_KEY no es válida: la guardada no se puede leer.",
   otra_clave: "Se guardó con otra CREDENCIALES_KEY y ya no se puede leer: pegala de nuevo.",
   formato: "La guardada está dañada: pegala de nuevo.",
   no_descifra: "La guardada no se puede leer: pegala de nuevo.",
+};
+
+// Lo que ve el dueño (sin nombrar variables ni Vercel)
+const PROBLEMA_SIMPLE = {
+  falta_clave: `Hay una guardada, pero falta un ajuste técnico para leerla. ${AVISAR}`,
+  clave_invalida: `Hay una guardada, pero un ajuste técnico está mal y no se puede leer. ${AVISAR}`,
+  otra_clave: "La guardada ya no se puede leer: pegala de nuevo.",
 };
 
 const dia = (iso) => (iso ? new Date(iso).toLocaleDateString("es-AR", { day: "numeric", month: "short", year: "numeric" }) : "");
@@ -149,9 +157,9 @@ export default function MercadoPago({ onVolver }) {
             <p className="adm-label">Credenciales de producción</p>
             <Alertas s={s} />
             <div className="adm-lista mp-creds">
-              <Credencial key={"t" + vuelta} id="mp-token" titulo="Access Token de producción" info={s.token} variable="MP_ACCESS_TOKEN"
+              <Credencial key={"t" + vuelta} id="mp-token" titulo="Access Token de producción" info={s.token} variable="MP_ACCESS_TOKEN" soporte={s.soporte}
                 valor={token} onChange={setToken} disabled={!puedeGuardar || busy} placeholder="APP_USR-…" />
-              <Credencial key={"s" + vuelta} id="mp-secreto" titulo="Clave secreta del webhook" info={s.secreto} variable="MP_WEBHOOK_SECRET"
+              <Credencial key={"s" + vuelta} id="mp-secreto" titulo="Clave secreta del webhook" info={s.secreto} variable="MP_WEBHOOK_SECRET" soporte={s.soporte}
                 valor={secreto} onChange={setSecreto} disabled={!puedeGuardar || busy} placeholder="La que da Mercado Pago en Webhooks" />
             </div>
             <button className="adm-btn negro mp-guardar" disabled={!puedeGuardar || !hayAlgo || busy} onClick={() => setPidiendo(true)}>
@@ -203,7 +211,7 @@ function EstadoConexion({ s, onProbar, probando }) {
   }
   const datos = [
     c?.id && `ID ${c.id}`,
-    s.token.fuente === "panel" ? "cargado en el panel" : s.token.fuente === "vercel" ? "desde las variables de Vercel" : null,
+    s.token.fuente === "panel" ? "cargado en el panel" : s.token.fuente === "vercel" ? (s.soporte ? "desde las variables de Vercel" : "configurado por tu desarrollador") : null,
     s.conexion === "sin_respuesta" && c?.guardada && "Mercado Pago no respondió: son los datos guardados",
   ].filter(Boolean);
   return (
@@ -224,6 +232,14 @@ function EstadoConexion({ s, onProbar, probando }) {
 function Alertas({ s }) {
   if (s.errorBase) return <Alerta tono="rojo" titulo="No pudimos leer la base">Probá de nuevo en un ratito.</Alerta>;
   if (s.tabla === null) return <Alerta tono="rojo" titulo="Falta conectar la base de datos">Sin Supabase no se pueden guardar credenciales.</Alerta>;
+  if (s.clave !== "ok" && !s.soporte) {
+    return (
+      <Alerta tono="rojo" titulo="Falta un ajuste técnico">
+        Falta un ajuste técnico para guardar las claves. Avisale a quien te hizo la tienda.
+        {(s.token.fuente === "vercel" || s.secreto.fuente === "vercel") && " Mientras tanto siguen valiendo las que ya están configuradas."}
+      </Alerta>
+    );
+  }
   if (s.clave !== "ok") {
     return (
       <Alerta tono="rojo" titulo={s.clave === "falta" ? "Falta la clave del servidor" : "La clave del servidor no es válida"}>
@@ -231,6 +247,9 @@ function Alertas({ s }) {
         {(s.token.fuente === "vercel" || s.secreto.fuente === "vercel") && " Mientras tanto se usan las variables de Vercel."}
       </Alerta>
     );
+  }
+  if (s.tabla === false && !s.soporte) {
+    return <Alerta tono="amarillo" titulo="Falta un ajuste técnico">Falta una actualización técnica para guardar las claves. Avisale a quien te hizo la tienda.</Alerta>;
   }
   if (s.tabla === false) {
     return <Alerta tono="amarillo" titulo="Falta actualizar la base">Corré <code>supabase/credenciales.sql</code> en Supabase → SQL Editor (README → «Mercado Pago desde el panel»).</Alerta>;
@@ -248,12 +267,12 @@ function Alerta({ tono = "amarillo", titulo, children }) {
 }
 
 // ---------- Un campo de credencial ----------
-function Credencial({ id, titulo, info, variable, valor, onChange, disabled, placeholder }) {
+function Credencial({ id, titulo, info, variable, soporte, valor, onChange, disabled, placeholder }) {
   const [ver, setVer] = useState(false);
   const g = info.guardado;
   let estado;
   if (info.fuente === "panel") estado = <span className="mp-guardada"><b>•••• {g.ultimos4}</b> · {dia(g.actualizado_en)}</span>;
-  else if (info.fuente === "vercel") estado = <span className="mp-guardada vercel" title={`Variable ${variable}`}>Desde Vercel</span>;
+  else if (info.fuente === "vercel") estado = <span className="mp-guardada vercel" title={soporte ? `Variable ${variable}` : undefined}>{soporte ? "Desde Vercel" : "Ya configurada"}</span>;
   else estado = <span className="mp-guardada falta">Sin cargar</span>;
   return (
     <div className="mp-cred">
@@ -261,7 +280,7 @@ function Credencial({ id, titulo, info, variable, valor, onChange, disabled, pla
         <label htmlFor={id}>{titulo}</label>
         {estado}
       </div>
-      {info.problema && <p className="mp-cred-problema">{PROBLEMA[info.problema] || "La guardada no se puede leer: pegala de nuevo."}</p>}
+      {info.problema && <p className="mp-cred-problema">{(soporte ? PROBLEMA : PROBLEMA_SIMPLE)[info.problema] || "La guardada no se puede leer: pegala de nuevo."}</p>}
       <div className={"mp-secreto" + (disabled ? " off" : "")}>
         <input
           id={id} name={id} type={ver ? "text" : "password"} value={valor} onChange={(e) => onChange(e.target.value)}
@@ -295,7 +314,7 @@ function Webhook({ s, toast }) {
       <div className="mp-url">
         <span className="mp-url-txt">
           <small>URL para pegar en Mercado Pago</small>
-          {s.webhookUrl ? <code>{s.webhookUrl}</code> : <em>Falta NEXT_PUBLIC_SITE_URL en Vercel</em>}
+          {s.webhookUrl ? <code>{s.webhookUrl}</code> : <em>{s.soporte ? "Falta NEXT_PUBLIC_SITE_URL en Vercel" : "Falta un ajuste técnico. Avisale a quien te hizo la tienda."}</em>}
         </span>
         <button className="adm-mini" onClick={copiar} disabled={!s.webhookUrl}>{copiada ? "Copiada ✓" : "Copiar"}</button>
       </div>
@@ -325,7 +344,8 @@ function Modo({ s, onCambiar, busy }) {
           <span>Modo prueba<small>La tienda muestra la franja «Modo prueba: no se cobra de verdad». Solo para probar con una cuenta de prueba.</small></span>
           <Interruptor checked={m.activo} onChange={onCambiar} label="Modo prueba" disabled={m.fuente === "vercel" || busy} />
         </label>
-        {m.fuente === "vercel" && (
+        {m.fuente === "vercel" && !s.soporte && <p className="mp-nota">El modo prueba lo controla tu desarrollador.</p>}
+        {m.fuente === "vercel" && s.soporte && (
           <p className="mp-nota">Lo fija la variable <code>MP_MODO</code> de Vercel («{m.entorno}») y gana sobre este interruptor. Para manejarlo desde acá, borrala en Vercel y hacé Redeploy.</p>
         )}
       </div>

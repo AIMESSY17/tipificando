@@ -26,6 +26,14 @@ export const OBLIGATORIAS = [
 ];
 export const faltantes = () => OBLIGATORIAS.filter((k) => !String(process.env[k] || "").trim());
 
+// Mails de soporte técnico (variable SOPORTE_EMAILS, separados por coma). Esos admins ven los mensajes
+// técnicos (Vercel, variables, README…); el resto ve mensajes simples. Sin la variable, todos ven los simples.
+export const esSoporte = (email) => {
+  const e = String(email || "").trim().toLowerCase();
+  if (!e) return false;
+  return String(process.env.SOPORTE_EMAILS || "").split(",").map((s) => s.trim().toLowerCase()).filter(Boolean).includes(e);
+};
+
 // URL del sitio, sin barra final
 export const sitio = () => String(process.env.NEXT_PUBLIC_SITE_URL || "").trim().replace(/\/+$/, "");
 

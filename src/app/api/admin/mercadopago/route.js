@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import crypto from "node:crypto";
 import { createClient } from "@supabase/supabase-js";
-import { adminDb, requireAdmin, refrescarCatalogo, sitio } from "@/lib/server";
+import { adminDb, requireAdmin, refrescarCatalogo, sitio, esSoporte } from "@/lib/server";
 import {
   credencialesMP, olvidarCredenciales, cifrar, consultarCuenta, textoCuenta, modoPruebaDe, estadoClave, sinTabla,
   TOKEN, SECRETO, MODO_KEY,
@@ -75,7 +75,7 @@ function problemaSecreto(s) {
 }
 
 // ---------- Estado para la pantalla (sin valores) ----------
-async function estado({ consulta } = {}) {
+async function estado(yo, { consulta } = {}) {
   const c = await credencialesMP({ fresco: true });
   const db = adminDb();
   let cuenta = null;
@@ -105,6 +105,7 @@ async function estado({ consulta } = {}) {
   }
   const s = sitio();
   return {
+    soporte: esSoporte(yo),
     clave: c.info.clave,
     tabla: c.info.tabla,
     errorBase: c.info.errorBase,
@@ -123,7 +124,7 @@ export async function GET(req) {
   const yo = await requireAdmin(req);
   if (!yo) return no("No autorizado", 401);
   try {
-    return si(await estado());
+    return si(await estado(yo));
   } catch {
     return no("No se pudo consultar el estado de Mercado Pago.", 500);
   }
@@ -156,6 +157,7 @@ export async function POST(req) {
 async function guardar(yo, body) {
   const k = estadoClave();
   if (k !== "ok") {
+    if (!esSoporte(yo)) return no("Falta un ajuste técnico para guardar las claves. Avisale a quien te hizo la tienda.", 503);
     return no(k === "falta"
       ? "Falta la clave del servidor (CREDENCIALES_KEY en Vercel): sin ella no se pueden guardar credenciales."
       : "La clave del servidor (CREDENCIALES_KEY) no es válida: tienen que ser 32 bytes en base64.", 503);
@@ -163,7 +165,7 @@ async function guardar(yo, body) {
   const db = adminDb();
   if (!db) return no("Falta conectar la base de datos.", 503);
   const actual = await credencialesMP({ fresco: true });
-  if (actual.info.tabla === false) return no("Falta correr supabase/credenciales.sql en Supabase (ver README).", 503);
+  if (actual.info.tabla === false) return no(esSoporte(yo) ? "Falta correr supabase/credenciales.sql en Supabase (ver README)." : "Falta un ajuste técnico para guardar las claves. Avisale a quien te hizo la tienda.", 503);
 
   const token = String(body.token ?? "").trim();
   const secreto = String(body.secreto ?? "").trim();
@@ -211,7 +213,7 @@ async function guardar(yo, body) {
   olvidarCredenciales();
   if (error) {
     console.error("credenciales (guardar):", error.code || "error"); // sin message/details: pueden traer la fila
-    return no(sinTabla(error) ? "Falta correr supabase/credenciales.sql en Supabase (ver README)." : "No se pudo guardar. Probá de nuevo.", 500);
+    return no(sinTabla(error) ? (esSoporte(yo) ? "Falta correr supabase/credenciales.sql en Supabase (ver README)." : "Falta un ajuste técnico para guardar las claves. Avisale a quien te hizo la tienda.") : "No se pudo guardar. Probá de nuevo.", 500);
   }
   const habia = { [TOKEN]: actual.info.token.guardado, [SECRETO]: actual.info.secreto.guardado };
   const { error: logErr } = await db.from("credenciales_cambios").insert(filas.map((f) => ({
@@ -224,7 +226,7 @@ async function guardar(yo, body) {
   })));
   if (logErr) console.error("credenciales_cambios:", logErr.code || "error");
   refrescarCatalogo(); // la tienda muestra (o no) «Pagar con Mercado Pago»
-  return si({ ok: true, guardados: filas.map((f) => f.proveedor), estado: await estado() });
+  return si({ ok: true, guardados: filas.map((f) => f.proveedor), estado: await estado(yo) });
 }
 
 async function probar(yo) {
@@ -241,13 +243,13 @@ async function probar(yo) {
     if (error) console.error("credenciales (probar):", error.code || "error");
     olvidarCredenciales();
   }
-  return si({ ok: v.ok, estado: await estado({ consulta: v }) });
+  return si({ ok: v.ok, estado: await estado(yo, { consulta: v }) });
 }
 
 async function cambiarModo(yo, body) {
   if (!(await permitir("modo", yo))) return no("Muchos cambios seguidos. Esperá unos minutos.", 429);
   const m = modoPruebaDe({});
-  if (m.fuente === "vercel") return no(`Lo fija la variable MP_MODO de Vercel («${m.entorno}»). Borrala en Vercel y hacé Redeploy para manejarlo desde acá.`, 409);
+  if (m.fuente === "vercel") return no(esSoporte(yo) ? `Lo fija la variable MP_MODO de Vercel («${m.entorno}»). Borrala en Vercel y hacé Redeploy para manejarlo desde acá.` : "El modo prueba lo controla tu desarrollador.", 409);
   const db = adminDb();
   if (!db) return no("Falta conectar la base de datos.", 503);
   const activo = body.activo === true;
@@ -257,5 +259,5 @@ async function cambiarModo(yo, body) {
   if (logErr && !sinTabla(logErr)) console.error("credenciales_cambios:", logErr.code || "error");
   olvidarCredenciales();
   refrescarCatalogo(); // la franja «Modo prueba» de la tienda
-  return si({ ok: true, estado: await estado() });
+  return si({ ok: true, estado: await estado(yo) });
 }

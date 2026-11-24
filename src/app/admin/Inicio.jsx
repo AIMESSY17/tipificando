@@ -1,5 +1,5 @@
 "use client";
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { VENTA } from "@/lib/precios";
 import { nivelStock, umbralDe } from "@/lib/stock";
 import { useAdm, useDatos, q, money, Titulo, Esqueleto, ErrorCarga, Vacio } from "./ui";
@@ -9,7 +9,14 @@ const saludo = () => { const h = new Date().getHours(); return h < 13 ? "¡Buen 
 const dia = (d) => new Date(d.getFullYear(), d.getMonth(), d.getDate()).getTime();
 
 export default function Inicio() {
-  const { db, version, abrirPedido, irA } = useAdm();
+  const { db, api, version, abrirPedido, irA } = useAdm();
+  // Solo para soporte (SOPORTE_EMAILS): qué ajustes técnicos faltan. Al dueño el servidor no le manda nada.
+  const [soporte, setSoporte] = useState(null);
+  useEffect(() => {
+    let vivo = true;
+    api("admin/soporte").then((r) => { if (vivo && r?.soporte) setSoporte(r); }).catch(() => {});
+    return () => { vivo = false; };
+  }, [api, version]);
   const datos = useDatos(async () => {
     const [orders, products, arr, umbral] = await Promise.all([
       q(db.from("orders").select("*").order("created_at", { ascending: false }).limit(1000)),
@@ -68,6 +75,16 @@ export default function Inicio() {
         <Esqueleto tarjetas={4} filas={3} />
       ) : (
         <>
+          {soporte && (soporte.faltan.length > 0 || soporte.invalidas.length > 0) && (
+            <div className="adm-soporte" role="status">
+              <b>🛠️ Soporte: falta configurar en Vercel</b>
+              <ul>
+                {[...soporte.faltan, ...soporte.invalidas].map((v) => <li key={v}><code>{v}</code></li>)}
+              </ul>
+              <small>Solo lo ves vos (SOPORTE_EMAILS). Cargala en Vercel → Environment Variables y hacé Redeploy. El dueño no ve este aviso.</small>
+            </div>
+          )}
+
           {(r.nuevos > 0 || datos.data.arr > 0) && (
             <div className="adm-avisos">
               {r.nuevos > 0 && (

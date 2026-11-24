@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { getCatalog, requireAdmin } from "@/lib/server";
+import { getCatalog, requireAdmin, esSoporte } from "@/lib/server";
 import { cfgEnvio, referencias, precioFinal, SERVICIO, MODALIDADES, unidadesZipnova, resumenPaquete } from "@/lib/envio";
 import { cotizarAndreani, destinoParaCotizar, zipnovaActivo } from "@/lib/zipnova";
 
@@ -14,7 +14,7 @@ export async function POST(req) {
   const body = await req.json().catch(() => ({}));
   const destino = destinoParaCotizar(body.destino);
   if (!destino) return err("Completá provincia, localidad y código postal (4 números).");
-  if (!zipnovaActivo()) return err("Faltan las variables ZIPNOVA_* en Vercel (o en .env.local).");
+  if (!zipnovaActivo()) return err(esSoporte(yo) ? "Faltan las variables ZIPNOVA_* en Vercel (o en .env.local)." : "La cotización automática de envíos no está activada. Avisale a quien te hizo la tienda.");
 
   const { products, settings } = await getCatalog();
   const cfg = cfgEnvio(body.cfg || settings.envio_cfg);
